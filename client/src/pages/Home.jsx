@@ -29,7 +29,7 @@ const slides = [
 export default function Home() {
   const [currentSlide, setCurrentSlide] = useState(0);
 
-  // Dynamically load Google Fonts
+  // Load Google Fonts dynamically
   useEffect(() => {
     if (!document.getElementById("gf-poppins")) {
       const link = document.createElement("link");
@@ -50,10 +50,9 @@ export default function Home() {
 
   return (
     <div style={{ fontFamily: "'Poppins', sans-serif" }} className="min-h-screen bg-gray-50">
-      {/* ================= NAVBAR ================= */}
       <Navbar />
 
-      {/* ================= HERO SLIDER ================= */}
+      {/* HERO SLIDER */}
       <header className="relative w-full h-[45vh] mt-16 overflow-hidden">
         {slides.map((slide, index) => (
           <div
@@ -78,7 +77,7 @@ export default function Home() {
               <div className="flex gap-4 flex-wrap justify-center">
                 <Link
                   to="/register"
-                  className="bg-teal-600 hover:bg-teal-700 px-7 py-2.5 rounded-lg font-medium shadow transition"
+                  className="bg-teal-600 hover:bg-teal-700 px-7 py-2.5 rounded-lg font-medium shadow-lg transition transform hover:-translate-y-0.5"
                 >
                   Get Started
                 </Link>
@@ -107,9 +106,9 @@ export default function Home() {
         </div>
       </header>
 
-      {/* ================= FEATURES ================= */}
+      {/* FEATURES */}
       <section className="max-w-7xl mx-auto px-6 py-16">
-        <h2 className="text-3xl font-semibold text-center mb-12">
+        <h2 className="text-3xl font-semibold text-center mb-12 text-gray-800">
           Why Choose Proxify?
         </h2>
         <div className="grid md:grid-cols-3 gap-8">
@@ -128,10 +127,10 @@ export default function Home() {
         </div>
       </section>
 
-      {/* ================= HOW IT WORKS ================= */}
+      {/* HOW IT WORKS */}
       <section className="bg-white py-16">
         <div className="max-w-7xl mx-auto px-6">
-          <h2 className="text-3xl font-bold text-center mb-12">
+          <h2 className="text-3xl font-bold text-center mb-12 text-gray-800">
             How the System Works
           </h2>
           <div className="grid md:grid-cols-3 gap-8 text-center">
@@ -154,9 +153,9 @@ export default function Home() {
         </div>
       </section>
 
-      {/* ================= USER ROLES ================= */}
+      {/* USER ROLES */}
       <section className="max-w-7xl mx-auto px-6 py-16">
-        <h2 className="text-3xl font-bold text-center mb-12">
+        <h2 className="text-3xl font-bold text-center mb-12 text-gray-800">
           Platform User Roles
         </h2>
         <div className="grid md:grid-cols-3 gap-8">
@@ -175,7 +174,7 @@ export default function Home() {
         </div>
       </section>
 
-      {/* ================= FOOTER ================= */}
+      {/* FOOTER */}
       <footer className="bg-gray-900 text-gray-300 py-6 text-center text-sm">
         © {new Date().getFullYear()} Proxify | Final Year Project
       </footer>
@@ -183,7 +182,7 @@ export default function Home() {
   );
 }
 
-/* ================= REUSABLE COMPONENTS ================= */
+/* REUSABLE COMPONENTS */
 
 function FeatureCard({ title, description }) {
   return (
@@ -196,7 +195,7 @@ function FeatureCard({ title, description }) {
 
 function StepCard({ step, title, description }) {
   return (
-    <div className="p-6 rounded-lg shadow bg-gray-50">
+    <div className="p-6 rounded-lg shadow bg-gray-50 hover:shadow-lg transition transform hover:-translate-y-1">
       <div className="text-4xl font-bold text-teal-600 mb-4">{step}</div>
       <h3 className="text-xl font-semibold mb-2 text-gray-800">{title}</h3>
       <p className="text-gray-600">{description}</p>
@@ -206,7 +205,7 @@ function StepCard({ step, title, description }) {
 
 function RoleCard({ title, description }) {
   return (
-    <div className="bg-white p-6 rounded-lg shadow hover:shadow-lg transition text-center">
+    <div className="bg-white p-6 rounded-lg shadow hover:shadow-lg transition text-center transform hover:-translate-y-1">
       <h3 className="text-xl font-semibold mb-3 text-gray-800">{title}</h3>
       <p className="text-gray-600">{description}</p>
     </div>

@@ -19,11 +19,13 @@ export default function Login() {
 
   return (
     <div className="flex justify-center items-center min-h-screen bg-gray-50 p-4">
-      <form className="bg-white p-10 rounded-2xl shadow-xl w-full max-w-md relative overflow-hidden"
-            onSubmit={handleSubmit}>
-        {/* Decorative gradient overlay */}
-        <div className="absolute -top-16 -left-16 w-72 h-72 bg-teal-200 rounded-full mix-blend-multiply filter blur-3xl opacity-30 animate-pulse"></div>
-        <div className="absolute -bottom-16 -right-16 w-72 h-72 bg-teal-300 rounded-full mix-blend-multiply filter blur-3xl opacity-30 animate-pulse"></div>
+      <form
+        onSubmit={handleSubmit}
+        className="bg-white p-10 rounded-2xl shadow-xl w-full max-w-md relative overflow-hidden"
+      >
+        {/* Decorative teal gradient overlays */}
+        <div className="absolute -top-20 -left-20 w-72 h-72 bg-teal-200 rounded-full mix-blend-multiply filter blur-3xl opacity-30 animate-pulse"></div>
+        <div className="absolute -bottom-20 -right-20 w-72 h-72 bg-teal-300 rounded-full mix-blend-multiply filter blur-3xl opacity-30 animate-pulse"></div>
 
         <h2 className="text-3xl font-bold mb-8 text-center text-gray-800">
           Welcome Back
@@ -68,7 +70,10 @@ export default function Login() {
 
         <p className="text-sm text-gray-500 mt-6 text-center">
           Don't have an account?{" "}
-          <a href="/register" className="text-teal-600 hover:text-teal-700 font-semibold transition">
+          <a
+            href="/register"
+            className="text-teal-600 hover:text-teal-700 font-semibold transition"
+          >
             Sign Up
           </a>
         </p>

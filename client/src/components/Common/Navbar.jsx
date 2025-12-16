@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 export default function Navbar({ user }) {
   const [menuOpen, setMenuOpen] = useState(false);
   const [dropdownOpen, setDropdownOpen] = useState(false);
+  const [servicesOpen, setServicesOpen] = useState(false);
 
   // Load Poppins font dynamically
   useEffect(() => {
@@ -36,10 +37,54 @@ export default function Navbar({ user }) {
         </Link>
 
         {/* DESKTOP MENU */}
-        <div className="hidden md:flex items-center gap-8 text-gray-700">
+        <div className="hidden md:flex items-center gap-6 text-gray-800">
           <Link to="/" className="hover:text-teal-600 transition">
             Home
           </Link>
+          <Link to="/about" className="hover:text-teal-600 transition">
+            About Us
+          </Link>
+          <Link to="/contact" className="hover:text-teal-600 transition">
+            Contact Us
+          </Link>
+
+          {/* Our Services Dropdown */}
+          <div className="relative">
+            <button
+              onClick={() => setServicesOpen(!servicesOpen)}
+              className="hover:text-teal-600 transition font-medium"
+            >
+              Our Services ▼
+            </button>
+            {servicesOpen && (
+              <div className="absolute mt-2 w-48 bg-white shadow-lg rounded-lg border py-2">
+                <Link
+                  to="/services/plumbing"
+                  className="block px-4 py-2 text-gray-800 hover:bg-gray-100"
+                >
+                  Plumbing
+                </Link>
+                <Link
+                  to="/services/cleaning"
+                  className="block px-4 py-2 text-gray-800 hover:bg-gray-100"
+                >
+                  Cleaning
+                </Link>
+                <Link
+                  to="/services/electricians"
+                  className="block px-4 py-2 text-gray-800 hover:bg-gray-100"
+                >
+                  Electricians
+                </Link>
+                <Link
+                  to="/services/relocation"
+                  className="block px-4 py-2 text-gray-800 hover:bg-gray-100"
+                >
+                  Relocation
+                </Link>
+              </div>
+            )}
+          </div>
 
           {!user ? (
             <>
@@ -66,7 +111,7 @@ export default function Navbar({ user }) {
                 <div className="absolute right-0 mt-3 w-48 bg-white rounded-lg shadow border">
                   <Link
                     to={dashboardPath}
-                    className="block px-4 py-3 text-gray-700 hover:bg-gray-100"
+                    className="block px-4 py-3 text-gray-800 hover:bg-gray-100"
                   >
                     Dashboard
                   </Link>
@@ -74,7 +119,7 @@ export default function Navbar({ user }) {
                   {user.role === "provider" && (
                     <Link
                       to="/provider/community"
-                      className="block px-4 py-3 text-gray-700 hover:bg-gray-100"
+                      className="block px-4 py-3 text-gray-800 hover:bg-gray-100"
                     >
                       Community
                     </Link>
@@ -94,7 +139,7 @@ export default function Navbar({ user }) {
 
         {/* MOBILE MENU BUTTON */}
         <button
-          className="md:hidden text-2xl text-gray-700"
+          className="md:hidden text-2xl text-gray-800"
           onClick={() => setMenuOpen(!menuOpen)}
         >
           ☰
@@ -103,10 +148,58 @@ export default function Navbar({ user }) {
 
       {/* MOBILE MENU */}
       {menuOpen && (
-        <div className="md:hidden bg-white border-t px-6 py-4 space-y-4 text-gray-700">
+        <div className="md:hidden bg-white border-t px-6 py-4 space-y-4 text-gray-800">
           <Link to="/" onClick={() => setMenuOpen(false)}>
             Home
           </Link>
+          <Link to="/about" onClick={() => setMenuOpen(false)}>
+            About Us
+          </Link>
+          <Link to="/contact" onClick={() => setMenuOpen(false)}>
+            Contact Us
+          </Link>
+
+          {/* Mobile Services Dropdown */}
+          <div>
+            <button
+              onClick={() => setServicesOpen(!servicesOpen)}
+              className="font-medium hover:text-teal-600 transition w-full text-left"
+            >
+              Our Services ▼
+            </button>
+            {servicesOpen && (
+              <div className="pl-4 mt-2 space-y-2">
+                <Link
+                  to="/services/plumbing"
+                  onClick={() => setMenuOpen(false)}
+                  className="block hover:text-teal-600 transition"
+                >
+                  Plumbing
+                </Link>
+                <Link
+                  to="/services/cleaning"
+                  onClick={() => setMenuOpen(false)}
+                  className="block hover:text-teal-600 transition"
+                >
+                  Cleaning
+                </Link>
+                <Link
+                  to="/services/electricians"
+                  onClick={() => setMenuOpen(false)}
+                  className="block hover:text-teal-600 transition"
+                >
+                  Electricians
+                </Link>
+                <Link
+                  to="/services/relocation"
+                  onClick={() => setMenuOpen(false)}
+                  className="block hover:text-teal-600 transition"
+                >
+                  Relocation
+                </Link>
+              </div>
+            )}
+          </div>
 
           {!user ? (
             <>
