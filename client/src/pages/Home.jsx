@@ -78,7 +78,7 @@ export default function Home() {
               <div className="flex gap-4 flex-wrap justify-center">
                 <Link
                   to="/register"
-                  className="bg-indigo-600 hover:bg-indigo-700 px-7 py-2.5 rounded-lg font-medium shadow transition"
+                  className="bg-teal-600 hover:bg-teal-700 px-7 py-2.5 rounded-lg font-medium shadow transition"
                 >
                   Get Started
                 </Link>
@@ -188,7 +188,7 @@ export default function Home() {
 function FeatureCard({ title, description }) {
   return (
     <div className="bg-white p-6 rounded-lg shadow hover:shadow-lg transition">
-      <h3 className="text-xl font-semibold mb-3">{title}</h3>
+      <h3 className="text-xl font-semibold mb-3 text-gray-800">{title}</h3>
       <p className="text-gray-600 font-light">{description}</p>
     </div>
   );
@@ -197,8 +197,8 @@ function FeatureCard({ title, description }) {
 function StepCard({ step, title, description }) {
   return (
     <div className="p-6 rounded-lg shadow bg-gray-50">
-      <div className="text-4xl font-bold text-indigo-600 mb-4">{step}</div>
-      <h3 className="text-xl font-semibold mb-2">{title}</h3>
+      <div className="text-4xl font-bold text-teal-600 mb-4">{step}</div>
+      <h3 className="text-xl font-semibold mb-2 text-gray-800">{title}</h3>
       <p className="text-gray-600">{description}</p>
     </div>
   );
@@ -207,7 +207,7 @@ function StepCard({ step, title, description }) {
 function RoleCard({ title, description }) {
   return (
     <div className="bg-white p-6 rounded-lg shadow hover:shadow-lg transition text-center">
-      <h3 className="text-xl font-semibold mb-3">{title}</h3>
+      <h3 className="text-xl font-semibold mb-3 text-gray-800">{title}</h3>
       <p className="text-gray-600">{description}</p>
     </div>
   );
