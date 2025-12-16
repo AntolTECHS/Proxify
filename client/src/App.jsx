@@ -1,35 +1,74 @@
-import { useState } from 'react'
-import reactLogo from './assets/react.svg'
-import viteLogo from '/vite.svg'
-import './App.css'
+import { BrowserRouter as Router, Routes, Route, Navigate } from "react-router-dom";
+import { useSelector } from "react-redux";
+
+// Pages
+import Home from "./pages/Home.jsx";
+import ProviderDashboard from "./pages/Provider/Dashboard.jsx";
+import CustomerDashboard from "./pages/Customer/Dashboard.jsx";
+import AdminPanel from "./pages/Admin/AdminPanel.jsx";
+
+// Auth Components
+import Login from "./components/Auth/Login.jsx";
+import Register from "./components/Auth/Register.jsx";
 
 function App() {
-  const [count, setCount] = useState(0)
+  // Get current logged-in user from Redux
+  const { user } = useSelector((state) => state.auth);
+
+  // Protected Route Component
+  const ProtectedRoute = ({ role, children }) => {
+    // Redirect to login if not authenticated
+    if (!user) return <Navigate to="/login" replace />;
+
+    // Redirect to home if user role doesn't match
+    if (role && user.role !== role) return <Navigate to="/" replace />;
+
+    return children;
+  };
 
   return (
-    <>
-      <div>
-        <a href="https://vite.dev" target="_blank">
-          <img src={viteLogo} className="logo" alt="Vite logo" />
-        </a>
-        <a href="https://react.dev" target="_blank">
-          <img src={reactLogo} className="logo react" alt="React logo" />
-        </a>
-      </div>
-      <h1>Vite + React</h1>
-      <div className="card">
-        <button onClick={() => setCount((count) => count + 1)}>
-          count is {count}
-        </button>
-        <p>
-          Edit <code>src/App.jsx</code> and save to test HMR
-        </p>
-      </div>
-      <p className="read-the-docs">
-        Click on the Vite and React logos to learn more
-      </p>
-    </>
-  )
+    <Router>
+      <Routes>
+        {/* Public Routes */}
+        <Route path="/" element={<Home />} />
+        <Route path="/login" element={user ? <Navigate to="/" replace /> : <Login />} />
+        <Route path="/register" element={user ? <Navigate to="/" replace /> : <Register />} />
+
+        {/* Provider Dashboard */}
+        <Route
+          path="/provider/dashboard"
+          element={
+            <ProtectedRoute role="provider">
+              <ProviderDashboard />
+            </ProtectedRoute>
+          }
+        />
+
+        {/* Customer Dashboard */}
+        <Route
+          path="/customer/dashboard"
+          element={
+            <ProtectedRoute role="customer">
+              <CustomerDashboard />
+            </ProtectedRoute>
+          }
+        />
+
+        {/* Admin Panel */}
+        <Route
+          path="/admin/panel"
+          element={
+            <ProtectedRoute role="admin">
+              <AdminPanel />
+            </ProtectedRoute>
+          }
+        />
+
+        {/* Fallback: Redirect unknown routes to home */}
+        <Route path="*" element={<Navigate to="/" replace />} />
+      </Routes>
+    </Router>
+  );
 }
 
-export default App
+export default App;
