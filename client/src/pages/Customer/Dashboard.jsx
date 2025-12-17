@@ -14,7 +14,7 @@ export default function CustomerDashboard() {
           <SearchProviders />
         </div>
 
-        {/* Customer Bookings */}
+     
         <div className="bg-white p-6 rounded-lg shadow">
           <Bookings />
         </div>
