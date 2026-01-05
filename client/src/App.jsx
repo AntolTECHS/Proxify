@@ -1,40 +1,64 @@
-import { BrowserRouter as Router, Routes, Route, Navigate } from "react-router-dom";
+import {
+  BrowserRouter as Router,
+  Routes,
+  Route,
+  Navigate,
+} from "react-router-dom";
 import { useSelector } from "react-redux";
 
-// Pages
+/* PUBLIC */
 import Home from "./pages/Home.jsx";
-import ProviderDashboard from "./pages/Provider/Dashboard.jsx";
-import CustomerDashboard from "./pages/Customer/Dashboard.jsx";
-import AdminPanel from "./pages/Admin/AdminPanel.jsx";
 
-// Auth Components
+/* AUTH */
 import Login from "./components/Auth/Login.jsx";
 import Register from "./components/Auth/Register.jsx";
 
+/* DASHBOARDS */
+import ProviderDashboard from "./pages/provider/ProviderDashboard.jsx";
+import ProviderCommunity from "./pages/provider/ProviderCommunity.jsx";
+import ProviderOnboarding from "./pages/provider/ProviderOnboarding.jsx";
+
+import CustomerDashboard from "./pages/Customer/Dashboard.jsx";
+import AdminPanel from "./pages/Admin/AdminPanel.jsx";
+
 function App() {
-  // Get current logged-in user from Redux
   const { user } = useSelector((state) => state.auth);
 
-  // Protected Route Component
+  /* ---------- PROTECTED ROUTE ---------- */
   const ProtectedRoute = ({ role, children }) => {
-    // Redirect to login if not authenticated
     if (!user) return <Navigate to="/login" replace />;
-
-    // Redirect to home if user role doesn't match
     if (role && user.role !== role) return <Navigate to="/" replace />;
-
     return children;
   };
 
   return (
     <Router>
       <Routes>
-        {/* Public Routes */}
+        {/* ---------- PUBLIC ---------- */}
         <Route path="/" element={<Home />} />
-        <Route path="/login" element={user ? <Navigate to="/" replace /> : <Login />} />
-        <Route path="/register" element={user ? <Navigate to="/" replace /> : <Register />} />
 
-        {/* Provider Dashboard */}
+        <Route
+          path="/login"
+          element={user ? <Navigate to="/" replace /> : <Login />}
+        />
+        <Route
+          path="/register"
+          element={user ? <Navigate to="/" replace /> : <Register />}
+        />
+
+        {/* ---------- PROVIDER ONBOARDING ---------- */}
+        <Route
+          path="/become-provider"
+          element={
+            user?.role === "provider" ? (
+              <Navigate to="/provider/dashboard" replace />
+            ) : (
+              <ProviderOnboarding user={user} />
+            )
+          }
+        />
+
+        {/* ---------- PROVIDER ---------- */}
         <Route
           path="/provider/dashboard"
           element={
@@ -44,7 +68,16 @@ function App() {
           }
         />
 
-        {/* Customer Dashboard */}
+        <Route
+          path="/provider/community"
+          element={
+            <ProtectedRoute role="provider">
+              <ProviderCommunity />
+            </ProtectedRoute>
+          }
+        />
+
+        {/* ---------- CUSTOMER ---------- */}
         <Route
           path="/customer/dashboard"
           element={
@@ -54,7 +87,7 @@ function App() {
           }
         />
 
-        {/* Admin Panel */}
+        {/* ---------- ADMIN ---------- */}
         <Route
           path="/admin/panel"
           element={
@@ -64,7 +97,7 @@ function App() {
           }
         />
 
-        {/* Fallback: Redirect unknown routes to home */}
+        {/* ---------- FALLBACK ---------- */}
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
     </Router>
