@@ -30,14 +30,14 @@ export default function Navbar({ user }) {
       className="fixed top-0 left-0 w-full z-50 bg-white border-b border-gray-300"
       style={{ fontFamily: "'Poppins', sans-serif" }}
     >
-      <div className="max-w-7xl mx-auto px-6 py-4 flex justify-between items-center">
+      <div className="max-w-7xl mx-auto px-6 py-4 flex items-center">
         {/* LOGO */}
         <Link to="/" className="text-2xl font-bold text-teal-600">
           Proxify
         </Link>
 
-        {/* DESKTOP MENU */}
-        <div className="hidden md:flex items-center gap-6 text-gray-800">
+        {/* EVERYTHING ELSE — FAR RIGHT */}
+        <div className="hidden md:flex items-center gap-6 ml-auto text-gray-800">
           <Link to="/" className="hover:text-teal-600 transition">
             Home
           </Link>
@@ -48,7 +48,7 @@ export default function Navbar({ user }) {
             Contact Us
           </Link>
 
-          {/* Our Services Dropdown */}
+          {/* SERVICES DROPDOWN */}
           <div className="relative">
             <button
               onClick={() => setServicesOpen(!servicesOpen)}
@@ -57,28 +57,28 @@ export default function Navbar({ user }) {
               Our Services ▼
             </button>
             {servicesOpen && (
-              <div className="absolute mt-2 w-48 bg-white shadow-lg rounded-lg border py-2">
+              <div className="absolute right-0 mt-2 w-48 bg-white shadow-lg rounded-lg border py-2">
                 <Link
                   to="/services/plumbing"
-                  className="block px-4 py-2 text-gray-800 hover:bg-gray-100"
+                  className="block px-4 py-2 hover:bg-gray-100"
                 >
                   Plumbing
                 </Link>
                 <Link
                   to="/services/cleaning"
-                  className="block px-4 py-2 text-gray-800 hover:bg-gray-100"
+                  className="block px-4 py-2 hover:bg-gray-100"
                 >
                   Cleaning
                 </Link>
                 <Link
                   to="/services/electricians"
-                  className="block px-4 py-2 text-gray-800 hover:bg-gray-100"
+                  className="block px-4 py-2 hover:bg-gray-100"
                 >
                   Electricians
                 </Link>
                 <Link
                   to="/services/relocation"
-                  className="block px-4 py-2 text-gray-800 hover:bg-gray-100"
+                  className="block px-4 py-2 hover:bg-gray-100"
                 >
                   Relocation
                 </Link>
@@ -95,7 +95,7 @@ export default function Navbar({ user }) {
                 to="/register"
                 className="bg-teal-600 text-white px-5 py-2 rounded-lg hover:bg-teal-700 transition"
               >
-                Get Started
+                Sign Up
               </Link>
             </>
           ) : (
@@ -111,7 +111,7 @@ export default function Navbar({ user }) {
                 <div className="absolute right-0 mt-3 w-48 bg-white rounded-lg shadow border">
                   <Link
                     to={dashboardPath}
-                    className="block px-4 py-3 text-gray-800 hover:bg-gray-100"
+                    className="block px-4 py-3 hover:bg-gray-100"
                   >
                     Dashboard
                   </Link>
@@ -119,7 +119,7 @@ export default function Navbar({ user }) {
                   {user.role === "provider" && (
                     <Link
                       to="/provider/community"
-                      className="block px-4 py-3 text-gray-800 hover:bg-gray-100"
+                      className="block px-4 py-3 hover:bg-gray-100"
                     >
                       Community
                     </Link>
@@ -135,11 +135,21 @@ export default function Navbar({ user }) {
               )}
             </div>
           )}
+
+          {/* BECOME PROVIDER */}
+          {(!user || user.role !== "provider") && (
+            <Link
+              to="/become-provider"
+              className="bg-teal-100 text-teal-700 border border-teal-600 px-5 py-2 rounded-lg hover:bg-teal-600 hover:text-white transition font-medium"
+            >
+              Become a Provider
+            </Link>
+          )}
         </div>
 
         {/* MOBILE MENU BUTTON */}
         <button
-          className="md:hidden text-2xl text-gray-800"
+          className="md:hidden ml-auto text-2xl text-gray-800"
           onClick={() => setMenuOpen(!menuOpen)}
         >
           ☰
@@ -159,88 +169,50 @@ export default function Navbar({ user }) {
             Contact Us
           </Link>
 
-          {/* Mobile Services Dropdown */}
           <div>
             <button
               onClick={() => setServicesOpen(!servicesOpen)}
-              className="font-medium hover:text-teal-600 transition w-full text-left"
+              className="font-medium w-full text-left"
             >
               Our Services ▼
             </button>
             {servicesOpen && (
               <div className="pl-4 mt-2 space-y-2">
-                <Link
-                  to="/services/plumbing"
-                  onClick={() => setMenuOpen(false)}
-                  className="block hover:text-teal-600 transition"
-                >
-                  Plumbing
-                </Link>
-                <Link
-                  to="/services/cleaning"
-                  onClick={() => setMenuOpen(false)}
-                  className="block hover:text-teal-600 transition"
-                >
-                  Cleaning
-                </Link>
-                <Link
-                  to="/services/electricians"
-                  onClick={() => setMenuOpen(false)}
-                  className="block hover:text-teal-600 transition"
-                >
-                  Electricians
-                </Link>
-                <Link
-                  to="/services/relocation"
-                  onClick={() => setMenuOpen(false)}
-                  className="block hover:text-teal-600 transition"
-                >
-                  Relocation
-                </Link>
+                <Link to="/services/plumbing">Plumbing</Link>
+                <Link to="/services/cleaning">Cleaning</Link>
+                <Link to="/services/electricians">Electricians</Link>
+                <Link to="/services/relocation">Relocation</Link>
               </div>
             )}
           </div>
 
           {!user ? (
             <>
-              <Link to="/login" onClick={() => setMenuOpen(false)}>
-                Login
-              </Link>
+              <Link to="/login">Login</Link>
               <Link
                 to="/register"
-                onClick={() => setMenuOpen(false)}
-                className="block bg-teal-600 text-white px-4 py-2 rounded hover:bg-teal-700 transition"
+                className="block bg-teal-600 text-white px-4 py-2 rounded"
               >
-                Get Started
+                Sign Up
               </Link>
             </>
           ) : (
             <>
-              <Link
-                to={dashboardPath}
-                onClick={() => setMenuOpen(false)}
-                className="block hover:text-teal-600 transition"
-              >
-                Dashboard
-              </Link>
-
+              <Link to={dashboardPath}>Dashboard</Link>
               {user.role === "provider" && (
-                <Link
-                  to="/provider/community"
-                  onClick={() => setMenuOpen(false)}
-                  className="block hover:text-teal-600 transition"
-                >
-                  Community
-                </Link>
+                <Link to="/provider/community">Community</Link>
               )}
-
-              <button
-                onClick={() => alert("Logout")}
-                className="text-red-600 block"
-              >
-                Logout
-              </button>
+              <button className="text-red-600">Logout</button>
             </>
+          )}
+
+          {(!user || user.role !== "provider") && (
+            <Link
+              to="/become-provider"
+              className="block bg-teal-100 text-teal-700 border border-teal-600 px-4 py-2 rounded text-center"
+            >
+              Become a Provider
+            </Link>
           )}
         </div>
       )}
