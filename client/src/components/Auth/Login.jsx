@@ -14,7 +14,9 @@ export default function Login() {
   const handleSubmit = async (e) => {
     e.preventDefault();
     const result = await dispatch(loginUser({ email, password }));
-    if (result.meta.requestStatus === "fulfilled") navigate("/dashboard");
+    if (result.meta.requestStatus === "fulfilled") {
+      navigate("/dashboard");
+    }
   };
 
   return (
@@ -23,17 +25,24 @@ export default function Login() {
         onSubmit={handleSubmit}
         className="bg-white p-10 rounded-2xl shadow-xl w-full max-w-md relative overflow-hidden"
       >
-        {/* Decorative teal gradient overlays */}
-        <div className="absolute -top-20 -left-20 w-72 h-72 bg-teal-200 rounded-full mix-blend-multiply filter blur-3xl opacity-30 animate-pulse"></div>
-        <div className="absolute -bottom-20 -right-20 w-72 h-72 bg-teal-300 rounded-full mix-blend-multiply filter blur-3xl opacity-30 animate-pulse"></div>
+        {/* Decorative teal gradient overlays (CLICK-SAFE) */}
+        <div className="pointer-events-none absolute -top-20 -left-20 w-72 h-72 bg-teal-200 rounded-full mix-blend-multiply filter blur-3xl opacity-30 animate-pulse"></div>
+        <div className="pointer-events-none absolute -bottom-20 -right-20 w-72 h-72 bg-teal-300 rounded-full mix-blend-multiply filter blur-3xl opacity-30 animate-pulse"></div>
 
         <h2 className="text-3xl font-bold mb-8 text-center text-gray-800">
           Welcome Back
         </h2>
 
+        {/* Email */}
         <div className="mb-6">
-          <label className="block text-gray-700 mb-2 font-medium">Email</label>
+          <label
+            htmlFor="email"
+            className="block text-gray-700 mb-2 font-medium cursor-pointer"
+          >
+            Email
+          </label>
           <input
+            id="email"
             type="email"
             placeholder="Email"
             value={email}
@@ -43,9 +52,16 @@ export default function Login() {
           />
         </div>
 
+        {/* Password */}
         <div className="mb-6">
-          <label className="block text-gray-700 mb-2 font-medium">Password</label>
+          <label
+            htmlFor="password"
+            className="block text-gray-700 mb-2 font-medium cursor-pointer"
+          >
+            Password
+          </label>
           <input
+            id="password"
             type="password"
             placeholder="Password"
             value={password}
@@ -57,7 +73,8 @@ export default function Login() {
 
         <button
           type="submit"
-          className="bg-teal-600 hover:bg-teal-700 text-white p-3 w-full rounded-lg font-semibold shadow-md hover:shadow-lg transition transform hover:-translate-y-0.5"
+          disabled={status === "loading"}
+          className="bg-teal-600 hover:bg-teal-700 disabled:opacity-70 text-white p-3 w-full rounded-lg font-semibold shadow-md hover:shadow-lg transition transform hover:-translate-y-0.5"
         >
           {status === "loading" ? "Logging in..." : "Login"}
         </button>

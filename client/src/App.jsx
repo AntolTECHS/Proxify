@@ -1,64 +1,70 @@
-import {
-  BrowserRouter as Router,
-  Routes,
-  Route,
-  Navigate,
-} from "react-router-dom";
-import { useSelector } from "react-redux";
+import { BrowserRouter as Router, Routes, Route, Navigate } from "react-router-dom";
+import ProtectedRoute from "./components/ProtectedRoute.jsx";
 
-/* PUBLIC */
+/* ---------- PUBLIC ---------- */
 import Home from "./pages/Home.jsx";
+import AboutUs from "./pages/AboutUs.jsx";
 
-/* AUTH */
+/* ---------- AUTH ---------- */
 import Login from "./components/Auth/Login.jsx";
 import Register from "./components/Auth/Register.jsx";
 
-/* DASHBOARDS */
+/* ---------- PROVIDER ---------- */
 import ProviderDashboard from "./pages/provider/ProviderDashboard.jsx";
 import ProviderCommunity from "./pages/provider/ProviderCommunity.jsx";
 import ProviderOnboarding from "./pages/provider/ProviderOnboarding.jsx";
+import BecomeProvider from "./pages/BecomeProvider.jsx";
+import ProviderPending from "./pages/provider/ProviderStatus.jsx";
 
-import CustomerDashboard from "./pages/Customer/Dashboard.jsx";
-import AdminPanel from "./pages/Admin/AdminPanel.jsx";
+/* ---------- CUSTOMER ---------- */
+import CustomerDashboard from "./pages/Customer/CustomerDashboard.jsx";
+
+/* ---------- ADMIN ---------- */
+import AdminPanel from "./pages/Admin/AdminDashboard.jsx";
 
 function App() {
-  const { user } = useSelector((state) => state.auth);
-
-  /* ---------- PROTECTED ROUTE ---------- */
-  const ProtectedRoute = ({ role, children }) => {
-    if (!user) return <Navigate to="/login" replace />;
-    if (role && user.role !== role) return <Navigate to="/" replace />;
-    return children;
-  };
-
   return (
     <Router>
       <Routes>
         {/* ---------- PUBLIC ---------- */}
         <Route path="/" element={<Home />} />
+        <Route path="/about" element={<AboutUs />} />
 
+        {/* ---------- AUTH ---------- */}
+        <Route path="/login" element={<Login />} />
+        <Route path="/register" element={<Register />} />
+
+        {/* ---------- BECOME PROVIDER ---------- */}
         <Route
-          path="/login"
-          element={user ? <Navigate to="/" replace /> : <Login />}
-        />
-        <Route
-          path="/register"
-          element={user ? <Navigate to="/" replace /> : <Register />}
+          path="/become-provider"
+          element={
+            <ProtectedRoute>
+              <BecomeProvider />
+            </ProtectedRoute>
+          }
         />
 
         {/* ---------- PROVIDER ONBOARDING ---------- */}
         <Route
-          path="/become-provider"
+          path="/provider/onboarding"
           element={
-            user?.role === "provider" ? (
-              <Navigate to="/provider/dashboard" replace />
-            ) : (
-              <ProviderOnboarding user={user} />
-            )
+            <ProtectedRoute>
+              <ProviderOnboarding />
+            </ProtectedRoute>
           }
         />
 
-        {/* ---------- PROVIDER ---------- */}
+        {/* ---------- PROVIDER PENDING VERIFICATION ---------- */}
+        <Route
+          path="/provider/pending"
+          element={
+            <ProtectedRoute role="provider">
+              <ProviderPending />
+            </ProtectedRoute>
+          }
+        />
+
+        {/* ---------- PROVIDER DASHBOARD ---------- */}
         <Route
           path="/provider/dashboard"
           element={
@@ -77,7 +83,7 @@ function App() {
           }
         />
 
-        {/* ---------- CUSTOMER ---------- */}
+        {/* ---------- CUSTOMER DASHBOARD ---------- */}
         <Route
           path="/customer/dashboard"
           element={
@@ -87,7 +93,7 @@ function App() {
           }
         />
 
-        {/* ---------- ADMIN ---------- */}
+        {/* ---------- ADMIN PANEL ---------- */}
         <Route
           path="/admin/panel"
           element={

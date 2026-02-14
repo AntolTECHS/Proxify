@@ -1,10 +1,18 @@
-import { Link } from "react-router-dom";
+import { Link, useLocation } from "react-router-dom";
 import { useEffect, useState } from "react";
 
 export default function Navbar({ user }) {
   const [menuOpen, setMenuOpen] = useState(false);
   const [dropdownOpen, setDropdownOpen] = useState(false);
   const [servicesOpen, setServicesOpen] = useState(false);
+  const location = useLocation();
+
+  // Close menus on route change
+  useEffect(() => {
+    setMenuOpen(false);
+    setDropdownOpen(false);
+    setServicesOpen(false);
+  }, [location.pathname]);
 
   // Load Poppins font dynamically
   useEffect(() => {
@@ -36,7 +44,7 @@ export default function Navbar({ user }) {
           Proxify
         </Link>
 
-        {/* EVERYTHING ELSE — FAR RIGHT */}
+        {/* MENU ITEMS - FAR RIGHT */}
         <div className="hidden md:flex items-center gap-6 ml-auto text-gray-800">
           <Link to="/" className="hover:text-teal-600 transition">
             Home
@@ -48,7 +56,7 @@ export default function Navbar({ user }) {
             Contact Us
           </Link>
 
-          {/* SERVICES DROPDOWN */}
+          {/* Services Dropdown */}
           <div className="relative">
             <button
               onClick={() => setServicesOpen(!servicesOpen)}
@@ -88,12 +96,15 @@ export default function Navbar({ user }) {
 
           {!user ? (
             <>
-              <Link to="/login" className="hover:text-teal-600 transition">
+              <Link
+                to="/login"
+                className="hover:text-teal-600 transition font-medium"
+              >
                 Login
               </Link>
               <Link
                 to="/register"
-                className="bg-teal-600 text-white px-5 py-2 rounded-lg hover:bg-teal-700 transition"
+                className="bg-teal-600 text-white px-5 py-2 rounded-lg hover:bg-teal-700 transition font-medium"
               >
                 Sign Up
               </Link>
@@ -136,7 +147,7 @@ export default function Navbar({ user }) {
             </div>
           )}
 
-          {/* BECOME PROVIDER */}
+          {/* Become Provider */}
           {(!user || user.role !== "provider") && (
             <Link
               to="/become-provider"
@@ -178,19 +189,30 @@ export default function Navbar({ user }) {
             </button>
             {servicesOpen && (
               <div className="pl-4 mt-2 space-y-2">
-                <Link to="/services/plumbing">Plumbing</Link>
-                <Link to="/services/cleaning">Cleaning</Link>
-                <Link to="/services/electricians">Electricians</Link>
-                <Link to="/services/relocation">Relocation</Link>
+                <Link to="/services/plumbing" onClick={() => setMenuOpen(false)}>
+                  Plumbing
+                </Link>
+                <Link to="/services/cleaning" onClick={() => setMenuOpen(false)}>
+                  Cleaning
+                </Link>
+                <Link to="/services/electricians" onClick={() => setMenuOpen(false)}>
+                  Electricians
+                </Link>
+                <Link to="/services/relocation" onClick={() => setMenuOpen(false)}>
+                  Relocation
+                </Link>
               </div>
             )}
           </div>
 
           {!user ? (
             <>
-              <Link to="/login">Login</Link>
+              <Link to="/login" onClick={() => setMenuOpen(false)}>
+                Login
+              </Link>
               <Link
                 to="/register"
+                onClick={() => setMenuOpen(false)}
                 className="block bg-teal-600 text-white px-4 py-2 rounded"
               >
                 Sign Up
@@ -198,17 +220,25 @@ export default function Navbar({ user }) {
             </>
           ) : (
             <>
-              <Link to={dashboardPath}>Dashboard</Link>
+              <Link to={dashboardPath} onClick={() => setMenuOpen(false)}>
+                Dashboard
+              </Link>
               {user.role === "provider" && (
-                <Link to="/provider/community">Community</Link>
+                <Link
+                  to="/provider/community"
+                  onClick={() => setMenuOpen(false)}
+                >
+                  Community
+                </Link>
               )}
-              <button className="text-red-600">Logout</button>
+              <button className="text-red-600 block">Logout</button>
             </>
           )}
 
           {(!user || user.role !== "provider") && (
             <Link
               to="/become-provider"
+              onClick={() => setMenuOpen(false)}
               className="block bg-teal-100 text-teal-700 border border-teal-600 px-4 py-2 rounded text-center"
             >
               Become a Provider
