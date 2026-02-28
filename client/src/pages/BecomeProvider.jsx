@@ -1,32 +1,41 @@
-import { useEffect } from "react";
+// src/pages/BecomeProvider.jsx
+import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { useSelector } from "react-redux";
+import { useAuth } from "../context/AuthContext.jsx";
 
 export default function BecomeProvider() {
+  const { user, isLoading } = useAuth();
   const navigate = useNavigate();
-  const user = useSelector((state) => state.auth.user);
+  const [canAccess, setCanAccess] = useState(false);
 
   useEffect(() => {
+    if (isLoading) return; // wait for auth to load
+
     if (!user) {
-      // 🚫 Not logged in
-      navigate("/auth/login");
+      // Not logged in → redirect to login
+      navigate("/login", { replace: true });
       return;
     }
 
-    if (user.role === "provider") {
-      if (user.isVerified) {
-        // ✅ Already verified provider → dashboard
-        navigate("/provider/dashboard");
-      } else {
-        // ⏳ Pending provider → pending page
-        navigate("/provider/pending");
-      }
-      return;
+    if (user.role === "provider" || user.role === "pending") {
+      // Already a provider → go to dashboard
+      navigate("/provider/dashboard", { replace: true });
+    } else if (user.role === "customer") {
+      // Customer → allow access to onboarding form
+      setCanAccess(true);
+    } else {
+      // Default fallback for unknown roles
+      navigate("/", { replace: true });
     }
+  }, [user, isLoading, navigate]);
 
-    // ✅ New user → go to onboarding
-    navigate("/provider/onboarding");
-  }, [user, navigate]);
+  if (!canAccess) {
+    return (
+      <div className="max-w-3xl mx-auto mt-24 p-6 text-center text-gray-600">
+        Redirecting...
+      </div>
+    );
+  }
 
   return (
     <div className="max-w-3xl mx-auto mt-24 p-6">
@@ -34,9 +43,7 @@ export default function BecomeProvider() {
       <p className="text-gray-600 mb-6">
         Create your provider profile and submit documents for verification.
       </p>
-      <p className="text-gray-500">
-        Redirecting you to the right page...
-      </p>
+      {/* Here you can add the onboarding form for customers */}
     </div>
   );
 }

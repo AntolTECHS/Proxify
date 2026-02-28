@@ -1,3 +1,4 @@
+// src/components/Navbar.jsx
 import { Link, useLocation } from "react-router-dom";
 import { useEffect, useState } from "react";
 
@@ -44,7 +45,7 @@ export default function Navbar({ user }) {
           Proxify
         </Link>
 
-        {/* MENU ITEMS - FAR RIGHT */}
+        {/* MENU ITEMS - DESKTOP */}
         <div className="hidden md:flex items-center gap-6 ml-auto text-gray-800">
           <Link to="/" className="hover:text-teal-600 transition">
             Home
@@ -148,9 +149,9 @@ export default function Navbar({ user }) {
           )}
 
           {/* Become Provider */}
-          {(!user || user.role !== "provider") && (
+          {user?.role !== "provider" && (
             <Link
-              to="/become-provider"
+              to="/provider/onboarding"
               className="bg-teal-100 text-teal-700 border border-teal-600 px-5 py-2 rounded-lg hover:bg-teal-600 hover:text-white transition font-medium"
             >
               Become a Provider
@@ -235,9 +236,10 @@ export default function Navbar({ user }) {
             </>
           )}
 
-          {(!user || user.role !== "provider") && (
+          {/* Mobile Become Provider */}
+          {user?.role !== "provider" && (
             <Link
-              to="/become-provider"
+              to="/provider/onboarding"
               onClick={() => setMenuOpen(false)}
               className="block bg-teal-100 text-teal-700 border border-teal-600 px-4 py-2 rounded text-center"
             >

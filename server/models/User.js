@@ -1,15 +1,9 @@
-const mongoose = require("mongoose");
-const bcrypt = require("bcryptjs");
+import mongoose from "mongoose";
+import bcrypt from "bcryptjs";
 
 const userSchema = new mongoose.Schema(
   {
-    /* ================= BASIC INFO ================= */
-    name: {
-      type: String,
-      required: true,
-      trim: true,
-    },
-
+    name: { type: String, required: true, trim: true },
     email: {
       type: String,
       required: true,
@@ -17,33 +11,19 @@ const userSchema = new mongoose.Schema(
       lowercase: true,
       trim: true,
     },
-
     password: {
       type: String,
       required: true,
       minlength: 6,
+      select: false,
     },
-
     role: {
       type: String,
       enum: ["customer", "provider", "admin"],
       default: "customer",
     },
+    phone: String,
 
-    phone: {
-      type: String,
-      required: function () {
-        return this.role === "provider";
-      },
-    },
-
-    /* ================= PROVIDER ONBOARDING ================= */
-    providerFormData: {
-      type: Object, // services, availability, documents, etc.
-      default: {},
-    },
-
-    /* ================= VERIFICATION ================= */
     isVerified: {
       type: Boolean,
       default: function () {
@@ -58,48 +38,17 @@ const userSchema = new mongoose.Schema(
         return this.role === "provider" ? "pending" : "approved";
       },
     },
-
-    verificationNotes: {
-      type: String,
-    },
-
-    verifiedAt: {
-      type: Date,
-    },
-
-    /* ================= PROVIDER STATS ================= */
-    rating: {
-      type: Number,
-      default: 0,
-      min: 0,
-      max: 5,
-    },
-
-    totalJobs: {
-      type: Number,
-      default: 0,
-    },
-
-    completedJobs: {
-      type: Number,
-      default: 0,
-    },
   },
   { timestamps: true }
 );
 
-/* ================= PASSWORD HASHING ================= */
-userSchema.pre("save", async function (next) {
-  if (!this.isModified("password")) return next();
-
-  const salt = await bcrypt.genSalt(10);
-  this.password = await bcrypt.hash(this.password, salt);
-  next();
+userSchema.pre("save", async function () {
+  if (!this.isModified("password")) return;
+  this.password = await bcrypt.hash(this.password, 10);
 });
 
-/* ================= PASSWORD MATCH ================= */
-userSchema.methods.matchPassword = async function (enteredPassword) {
-  return await bcrypt.compare(enteredPassword, this.password);
+userSchema.methods.matchPassword = function (entered) {
+  return bcrypt.compare(entered, this.password);
 };
 
-module.exports = mongoose.model("User", userSchema);
+export default mongoose.model("User", userSchema);

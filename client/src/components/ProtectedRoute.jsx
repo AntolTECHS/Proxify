@@ -1,34 +1,50 @@
 // src/components/ProtectedRoute.jsx
 import { Navigate } from "react-router-dom";
-import { useSelector } from "react-redux";
+import { useAuth } from "../context/AuthContext.jsx";
 
 /**
  * ProtectedRoute
- * @param {ReactNode} children - component to render
- * @param {string} role - optional, restrict by role
+ * @param {ReactNode} children
+ * @param {string} role - optional ("provider", "customer", "admin")
+ * @param {string} excludeRole - optional, prevent this role from accessing the route
  */
-export default function ProtectedRoute({ children, role }) {
-  const { user } = useSelector((state) => state.auth);
+export default function ProtectedRoute({ children, role, excludeRole }) {
+  const { user, isLoading } = useAuth();
 
-  // 🚫 Not logged in → redirect to login
-  if (!user) return <Navigate to="/auth/login" replace />;
-
-  // ---------- PROVIDER CHECKS ----------
-  if (role === "provider") {
-    // Onboarding not finished → redirect to onboarding
-    if (user.role !== "provider" && user.providerStatus !== "approved") {
-      return <Navigate to="/provider/onboarding" replace />;
-    }
-
-    // Already provider but not verified → redirect to pending page
-    if (user.role === "provider" && !user.isVerified) {
-      return <Navigate to="/provider/pending" replace />;
-    }
+  if (isLoading) {
+    return (
+      <div className="w-full h-screen flex items-center justify-center text-gray-600">
+        Loading...
+      </div>
+    );
   }
 
-  // ---------- ROLE RESTRICTION ----------
-  if (role && user.role !== role) return <Navigate to="/" replace />;
+  // Not logged in → redirect to login
+  if (!user) return <Navigate to="/login" replace />;
 
-  // ✅ Access granted
+  // Exclude certain role (used for BecomeProvider)
+  if (excludeRole && user.role === excludeRole) {
+    return <Navigate to="/" replace />;
+  }
+
+  // ---------- PROVIDER ----------
+  if (role === "provider") {
+    if (user.role === "provider" || user.role === "pending") return children;
+    return <Navigate to="/become-provider" replace />;
+  }
+
+  // ---------- CUSTOMER ----------
+  if (role === "customer") {
+    if (user.role !== "customer") return <Navigate to="/" replace />;
+    return children;
+  }
+
+  // ---------- ADMIN ----------
+  if (role === "admin") {
+    if (user.role !== "admin") return <Navigate to="/" replace />;
+    return children;
+  }
+
+  // ---------- NO ROLE SPECIFIED ----------
   return children;
 }

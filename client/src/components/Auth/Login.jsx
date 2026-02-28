@@ -1,22 +1,28 @@
-import { useState } from "react";
-import { useDispatch, useSelector } from "react-redux";
-import { loginUser } from "../../redux/slices/authSlice";
-import { useNavigate } from "react-router-dom";
+import { useState, useEffect } from "react";
+import { useNavigate, Link } from "react-router-dom";
+import { useAuth } from "../../context/AuthContext.jsx";
+import { FaEye, FaEyeSlash } from "react-icons/fa";
 
 export default function Login() {
-  const dispatch = useDispatch();
+  const { login, user, status, error } = useAuth();
   const navigate = useNavigate();
-  const { status, error } = useSelector((state) => state.auth);
 
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
+
+  // Redirect logged-in users to their dashboard
+  useEffect(() => {
+    if (!user) return;
+
+    if (user.role === "provider") navigate("/provider/dashboard", { replace: true });
+    else if (user.role === "customer") navigate("/customer/dashboard", { replace: true });
+    else if (user.role === "admin") navigate("/admin/panel", { replace: true });
+  }, [user, navigate]);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    const result = await dispatch(loginUser({ email, password }));
-    if (result.meta.requestStatus === "fulfilled") {
-      navigate("/dashboard");
-    }
+    await login({ email, password });
   };
 
   return (
@@ -24,75 +30,65 @@ export default function Login() {
       <form
         onSubmit={handleSubmit}
         className="bg-white p-10 rounded-2xl shadow-xl w-full max-w-md relative overflow-hidden"
+        autoComplete="on"
       >
-        {/* Decorative teal gradient overlays (CLICK-SAFE) */}
-        <div className="pointer-events-none absolute -top-20 -left-20 w-72 h-72 bg-teal-200 rounded-full mix-blend-multiply filter blur-3xl opacity-30 animate-pulse"></div>
-        <div className="pointer-events-none absolute -bottom-20 -right-20 w-72 h-72 bg-teal-300 rounded-full mix-blend-multiply filter blur-3xl opacity-30 animate-pulse"></div>
-
-        <h2 className="text-3xl font-bold mb-8 text-center text-gray-800">
-          Welcome Back
-        </h2>
+        {/* System Name */}
+        <h1 className="text-4xl font-bold mb-6 text-center text-teal-600">Proxify</h1>
 
         {/* Email */}
-        <div className="mb-6">
-          <label
-            htmlFor="email"
-            className="block text-gray-700 mb-2 font-medium cursor-pointer"
-          >
-            Email
-          </label>
-          <input
-            id="email"
-            type="email"
-            placeholder="Email"
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-            className="border border-gray-300 p-3 w-full rounded-lg focus:outline-none focus:ring-2 focus:ring-teal-500 transition"
-            required
-          />
-        </div>
+        <input
+          type="email"
+          placeholder="Email"
+          value={email}
+          onChange={(e) => setEmail(e.target.value)}
+          required
+          className="mb-4 border p-3 w-full rounded-lg"
+          autoComplete="email"
+        />
 
-        {/* Password */}
-        <div className="mb-6">
-          <label
-            htmlFor="password"
-            className="block text-gray-700 mb-2 font-medium cursor-pointer"
-          >
-            Password
-          </label>
+        {/* Password with show/hide toggle */}
+        <div className="relative mb-4">
           <input
-            id="password"
-            type="password"
+            type={showPassword ? "text" : "password"}
             placeholder="Password"
             value={password}
             onChange={(e) => setPassword(e.target.value)}
-            className="border border-gray-300 p-3 w-full rounded-lg focus:outline-none focus:ring-2 focus:ring-teal-500 transition"
             required
+            className="border p-3 w-full rounded-lg pr-10"
+            autoComplete="current-password"
           />
+          <button
+            type="button"
+            onClick={() => setShowPassword(!showPassword)}
+            className="absolute top-3 right-3 text-gray-500 hover:text-gray-800"
+          >
+            {showPassword ? <FaEyeSlash /> : <FaEye />}
+          </button>
         </div>
 
+        {/* Submit */}
         <button
           type="submit"
           disabled={status === "loading"}
-          className="bg-teal-600 hover:bg-teal-700 disabled:opacity-70 text-white p-3 w-full rounded-lg font-semibold shadow-md hover:shadow-lg transition transform hover:-translate-y-0.5"
+          className="bg-teal-600 hover:bg-teal-700 text-white p-3 w-full rounded-lg mb-4"
         >
           {status === "loading" ? "Logging in..." : "Login"}
         </button>
 
+        {/* Error */}
         {error && (
-          <p className="text-red-500 mt-4 text-center font-medium">
-            {error.message || error}
-          </p>
+          <p className="text-red-500 mt-2 text-center">{error.message || error}</p>
         )}
 
-        <p className="text-sm text-gray-500 mt-6 text-center">
+        {/* Register link */}
+        <p className="text-center text-gray-500 mt-4">
           Don't have an account?{" "}
-          <a
-            href="/register"
-            className="text-teal-600 hover:text-teal-700 font-semibold transition"
+          <Link
+            to="/register"
+            className="text-teal-600 hover:underline font-medium"
           >
-            Sign Up
-          </a>
+            Register
+          </Link>
         </p>
       </form>
     </div>

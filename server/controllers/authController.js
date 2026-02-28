@@ -1,167 +1,111 @@
 // controllers/authController.js
-const User = require("../models/User");
-const bcrypt = require("bcryptjs");
-const jwt = require("jsonwebtoken");
+import User from "../models/User.js";
+import jwt from "jsonwebtoken";
 
 const JWT_EXPIRES_IN = process.env.JWT_EXPIRES_IN || "7d";
-const JWT_SECRET = process.env.JWT_SECRET;
-if (!JWT_SECRET) {
-  console.warn("WARNING: JWT_SECRET is not set in environment variables.");
-}
+const JWT_SECRET = process.env.JWT_SECRET || "servlinksecret";
 
-/**
- * Helper - generate JWT token
- * @param {ObjectId} userId
- * @returns {String} token
- */
-function generateToken(userId) {
-  return jwt.sign({ id: userId }, JWT_SECRET || "temporary_secret", {
-    expiresIn: JWT_EXPIRES_IN,
-  });
-}
+// ❌ DO NOT throw here — server must boot even if env is wrong
+const generateToken = (userId) => {
+  if (!JWT_SECRET) {
+    throw new Error("JWT_SECRET missing");
+  }
+  return jwt.sign({ id: userId }, JWT_SECRET, { expiresIn: JWT_EXPIRES_IN });
+};
 
-/* ======================================================
-   REGISTER (Customer / Provider)
-   - returns token + sanitized user object
-====================================================== */
-exports.register = async (req, res) => {
+/* ================== REGISTER ================== */
+export const register = async (req, res) => {
   try {
-    // Debug log (remove in production if desired)
-    console.log("AUTH_REGISTER_PAYLOAD:", req.body);
+    const { name, email, password, role, phone } = req.body;
 
-    const { name, email, password, role, phone } = req.body || {};
-
-    // Basic validation
     if (!name || !email || !password) {
-      return res.status(400).json({ success: false, message: "Name, email and password are required." });
+      return res.status(400).json({
+        success: false,
+        message: "Name, email and password are required",
+      });
     }
 
-    // Normalize
-    const normalizedEmail = String(email).trim().toLowerCase();
+    const normalizedEmail = email.toLowerCase().trim();
+    const finalRole = role === "provider" ? "provider" : "customer";
 
-    // Role handling
-    const allowedRoles = ["customer", "provider"];
-    const finalRole = allowedRoles.includes(role) ? role : "customer";
-
-    // Provider must supply phone
-    if (finalRole === "provider" && (!phone || String(phone).trim() === "")) {
-      return res.status(400).json({ success: false, message: "Phone number is required for providers." });
+    if (finalRole === "provider" && !phone) {
+      return res.status(400).json({
+        success: false,
+        message: "Phone is required for providers",
+      });
     }
 
-    // Check duplicate
     const existingUser = await User.findOne({ email: normalizedEmail });
     if (existingUser) {
-      return res.status(400).json({ success: false, message: "User with that email already exists." });
+      return res.status(400).json({
+        success: false,
+        message: "User already exists",
+      });
     }
 
-    // Hash password (controller-level)
-    const hashedPassword = await bcrypt.hash(password, 10);
-
-    // Build user payload
-    const userPayload = {
-      name: String(name).trim(),
+    const user = await User.create({
+      name,
       email: normalizedEmail,
-      password: hashedPassword,
+      password,
       role: finalRole,
-      providerFormData: {},
-    };
+      phone: finalRole === "provider" ? phone : undefined,
+    });
 
-    if (finalRole === "provider") {
-      userPayload.phone = phone;
-      userPayload.isVerified = false;
-      userPayload.verificationStatus = "pending";
-    } else {
-      // customers are considered verified by default in your flow
-      userPayload.isVerified = true;
-      userPayload.verificationStatus = "approved";
-    }
-
-    // Create user
-    const user = await User.create(userPayload);
-
-    // Generate token so frontend can auto-login
     const token = generateToken(user._id);
 
-    // Respond with sanitized user
-    const safeUser = {
-      id: user._id,
-      name: user.name,
-      email: user.email,
-      role: user.role,
-      phone: user.phone || null,
-      isVerified: !!user.isVerified,
-      verificationStatus: user.verificationStatus || (user.role === "provider" ? "pending" : "approved"),
-      createdAt: user.createdAt,
-    };
-
-    return res.status(201).json({
+    res.status(201).json({
       success: true,
-      message: finalRole === "provider"
-        ? "Provider account created. Verification pending admin approval."
-        : "User registered successfully.",
       token,
-      user: safeUser,
+      user: {
+        id: user._id,
+        name: user.name,
+        email: user.email,
+        role: user.role,
+        phone: user.phone || null,
+      },
     });
   } catch (error) {
     console.error("REGISTER ERROR:", error);
-    return res.status(500).json({ success: false, message: "Registration failed.", error: error.message });
+    res.status(500).json({
+      success: false,
+      message: error.message || "Registration failed",
+    });
   }
 };
 
-/* ======================================================
-   LOGIN
-   - returns token + sanitized user object
-====================================================== */
-exports.login = async (req, res) => {
+/* ================== LOGIN ================== */
+export const login = async (req, res) => {
   try {
-    console.log("AUTH_LOGIN_PAYLOAD:", req.body);
+    const { email, password } = req.body;
 
-    const { email, password } = req.body || {};
-    if (!email || !password) {
-      return res.status(400).json({ success: false, message: "Email and password are required." });
-    }
+    const normalizedEmail = email.toLowerCase().trim();
+    const user = await User.findOne({ email: normalizedEmail }).select("+password");
 
-    const normalizedEmail = String(email).trim().toLowerCase();
-    const user = await User.findOne({ email: normalizedEmail });
-
-    if (!user) {
-      return res.status(400).json({ success: false, message: "Invalid credentials." });
-    }
-
-    const isMatch = await bcrypt.compare(password, user.password);
-    if (!isMatch) {
-      return res.status(400).json({ success: false, message: "Invalid credentials." });
-    }
-
-    // Block rejected providers
-    if (user.role === "provider" && user.verificationStatus === "rejected") {
-      return res.status(403).json({
+    if (!user || !(await user.matchPassword(password))) {
+      return res.status(400).json({
         success: false,
-        message: "Your provider account has been rejected. Please contact support.",
+        message: "Invalid credentials",
       });
     }
 
     const token = generateToken(user._id);
 
-    const safeUser = {
-      id: user._id,
-      name: user.name,
-      email: user.email,
-      role: user.role,
-      phone: user.phone || null,
-      isVerified: !!user.isVerified,
-      verificationStatus: user.role === "provider" ? user.verificationStatus : "approved",
-      createdAt: user.createdAt,
-    };
-
-    return res.status(200).json({
+    res.status(200).json({
       success: true,
-      message: "Login successful",
       token,
-      user: safeUser,
+      user: {
+        id: user._id,
+        name: user.name,
+        email: user.email,
+        role: user.role,
+        phone: user.phone || null,
+      },
     });
   } catch (error) {
     console.error("LOGIN ERROR:", error);
-    return res.status(500).json({ success: false, message: "Login failed.", error: error.message });
+    res.status(500).json({
+      success: false,
+      message: error.message || "Login failed",
+    });
   }
 };

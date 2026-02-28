@@ -1,12 +1,8 @@
-import { useEffect, useState } from "react";
-import { useDispatch, useSelector } from "react-redux";
+// src/pages/provider/ProviderOnboarding.jsx
+import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 
-import {
-  setProviderStep,
-  setProviderData,
-  upgradeToProvider,
-} from "../../redux/slices/authSlice";
+import { useAuth } from "../../context/AuthContext";
 
 // Steps
 import StepBasicInfo from "./onboarding/steps/StepBasicInfo";
@@ -18,101 +14,109 @@ import StepReview from "./onboarding/steps/StepReview";
 // Progress
 import OnboardingProgress from "../../components/provider/OnboardingProgress";
 
-const steps = [
-  "Basic Info",
-  "Services",
-  "Availability",
-  "Documents",
-  "Review",
-];
+const steps = ["Basic Info", "Services", "Availability", "Documents", "Review"];
 
 export default function ProviderOnboarding() {
-  const dispatch = useDispatch();
+  const { user, upgradeToProvider, loading: authLoading, error: authError, logout } = useAuth();
   const navigate = useNavigate();
-  const user = useSelector((state) => state.auth.user);
-  const onboarding = useSelector((state) => state.auth.providerOnboarding);
 
-  // Current step (Redux + local state)
-  const [step, setStepLocal] = useState(onboarding.step ?? 0);
-
-  // Local form data (safe for File objects)
-  const [formData, setFormDataLocal] = useState(onboarding.data ?? {
+  // Step state
+  const [step, setStep] = useState(0);
+  const [formData, setFormData] = useState({
     basicInfo: {},
     services: [],
+    servicesDescription: "",
     availability: {},
-    documents: [], // files live here only
+    documents: [],
+    documentsText: "",
   });
+  const [submitError, setSubmitError] = useState(null);
+  const [submitting, setSubmitting] = useState(false);
 
-  /* =========================
-     Guards & Initialization
-  ========================= */
+  // Redirect logic: only redirect users who already completed onboarding
   useEffect(() => {
-    if (!user) {
-      navigate("/auth/login");
-      return;
+    if (!user) return;
+
+    if (user.role === "provider") {
+      navigate("/provider/dashboard", { replace: true });
+    } else if (user.providerStatus === "pending") {
+      navigate("/provider/pending", { replace: true });
     }
+    // else: allow new users to access onboarding steps
+  }, [user, navigate]);
 
-    // Already approved provider
-    if (user.role === "provider" && onboarding.status === "approved") {
-      navigate("/provider/dashboard");
-      return;
-    }
+  // Step navigation
+  const next = () => setStep((prev) => Math.min(prev + 1, steps.length - 1));
+  const back = () => setStep((prev) => Math.max(prev - 1, 0));
 
-    // First-time onboarding
-    if (onboarding.status === "not_started") {
-      dispatch(setProviderStep(0));
-      dispatch(setProviderData({})); // clears metadata
-      setStepLocal(0);
-      setFormDataLocal({
-        basicInfo: {},
-        services: [],
-        availability: {},
-        documents: [],
-      });
-    }
-  }, [user, onboarding.status, dispatch, navigate]);
-
-  /* =========================
-     Navigation Handlers
-  ========================= */
-  const next = () => {
-    const nextStep = Math.min(step + 1, steps.length - 1);
-    setStepLocal(nextStep);
-    dispatch(setProviderStep(nextStep));
-  };
-
-  const back = () => {
-    const prevStep = Math.max(step - 1, 0);
-    setStepLocal(prevStep);
-    dispatch(setProviderStep(prevStep));
-  };
-
-  /* =========================
-     Update Local Data
-  ========================= */
+  // Update form data
   const update = (section, data) => {
-    const updated = { ...formData, [section]: data };
-    setFormDataLocal(updated);
+    setFormData((prev) => {
+      const updated = { ...prev, [section]: data };
 
-    // Only store metadata in Redux (safe for serialization)
-    const metadata = { ...updated, documents: updated.documents.map(f => ({ name: f.name, size: f.size, type: f.type })) };
-    dispatch(setProviderData(metadata));
+      if (section === "documents") {
+        updated.documents = Array.isArray(data)
+          ? data.map((f) =>
+              f instanceof File
+                ? { file: f, name: f.name, size: f.size, type: f.type }
+                : { name: f.name || f, size: f.size || 0, type: f.type || "text" }
+            )
+          : [];
+      }
+
+      if (section === "documentsText") updated.documentsText = data;
+      if (section === "services") {
+        updated.services = data.services || data || [];
+        updated.servicesDescription = data.servicesDescription || "";
+      }
+      if (section === "basicInfo") updated.basicInfo = data;
+
+      return updated;
+    });
   };
 
-  /* =========================
-     Finish Onboarding
-  ========================= */
+  // Submit onboarding
   const finishOnboarding = async () => {
-    // send actual FormData to backend later
-    await dispatch(upgradeToProvider());
-    navigate("/provider/dashboard");
+    if (submitting) return;
+    setSubmitError(null);
+    setSubmitting(true);
+
+    try {
+      // Build FormData
+      const payload = new FormData();
+      payload.append("basicInfo", JSON.stringify(formData.basicInfo || {}));
+      payload.append("services", JSON.stringify(formData.services || []));
+      payload.append("servicesDescription", formData.servicesDescription || "");
+      payload.append("availability", JSON.stringify(formData.availability || {}));
+      if (formData.documentsText) payload.append("documentsText", formData.documentsText);
+
+      (formData.documents || []).forEach((doc) => {
+        if (doc?.file instanceof File) payload.append("documents", doc.file); // match backend
+      });
+
+      // Call AuthContext upgradeToProvider
+      const result = await upgradeToProvider(payload);
+
+      if (result.success) {
+        // Redirect to provider dashboard
+        navigate("/provider/dashboard", { replace: true });
+      } else if (result.error?.message.includes("Token invalid")) {
+        alert("Session expired. Please log in again.");
+        logout();
+        navigate("/login", { replace: true });
+      } else {
+        throw result.error;
+      }
+    } catch (err) {
+      console.error("Provider onboarding failed:", err);
+      setSubmitError(err?.message || "Failed to submit onboarding. Please try again.");
+    } finally {
+      setSubmitting(false);
+    }
   };
 
-  /* =========================
-     Render Current Step
-  ========================= */
+  // Render the current step
   const stepProps = { next, back, update, data: formData };
-
   const renderStep = () => {
     switch (step) {
       case 0:
@@ -124,18 +128,33 @@ export default function ProviderOnboarding() {
       case 3:
         return <StepDocuments {...stepProps} />;
       case 4:
-        return <StepReview data={formData} back={back} submit={finishOnboarding} />;
+        return (
+          <StepReview
+            data={formData}
+            back={back}
+            submit={finishOnboarding}
+            isLoading={submitting || authLoading}
+            error={submitError || authError}
+          />
+        );
       default:
         return null;
     }
   };
 
+  // Show loading if user info is not ready
+  if (!user) {
+    return (
+      <div className="w-full h-screen flex items-center justify-center text-gray-600">
+        Loading...
+      </div>
+    );
+  }
+
   return (
     <div className="max-w-4xl mx-auto mt-24 p-6">
       <OnboardingProgress steps={steps} current={step} />
-      <div className="mt-6 bg-white border border-gray-300 rounded-xl shadow p-6">
-        {renderStep()}
-      </div>
+      <div className="mt-6 bg-white border border-gray-300 rounded-xl shadow p-6">{renderStep()}</div>
     </div>
   );
 }

@@ -1,13 +1,23 @@
 import axios from "axios";
 
-const API = axios.create({
-  baseURL: "http://localhost:5000/api",
+const API = import.meta.env.VITE_API_URL || "http://localhost:5000/api";
+
+const axiosInstance = axios.create({
+  baseURL: API,
+  // You can set default headers here if needed
+  // headers: { 'Content-Type': 'application/json' }
 });
 
-API.interceptors.request.use((req) => {
-  const token = localStorage.getItem("token");
-  if (token) req.headers.Authorization = `Bearer ${token}`;
-  return req;
-});
+// Add a request interceptor to automatically attach token
+axiosInstance.interceptors.request.use(
+  (config) => {
+    const token = localStorage.getItem("token");
+    if (token) {
+      config.headers.Authorization = `Bearer ${token}`;
+    }
+    return config;
+  },
+  (error) => Promise.reject(error)
+);
 
-export default API;
+export default axiosInstance;
