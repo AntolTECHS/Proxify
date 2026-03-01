@@ -7,6 +7,11 @@
     "dev": "nodemon server.js"
   },
   "dependencies": {
-    "jwt-decode": "^4.0.0"
+    "@react-google-maps/api": "^2.20.8",
+    "jwt-decode": "^4.0.0",
+    "leaflet": "1.9",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "react-leaflet": "^4.2.1"
   }
 }

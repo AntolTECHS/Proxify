@@ -19,6 +19,8 @@ import ProviderDashboard from "./pages/provider/ProviderDashboard.jsx";
 import ProviderCommunity from "./pages/provider/ProviderCommunity.jsx";
 import ProviderOnboarding from "./pages/provider/ProviderOnboarding.jsx";
 import ProviderPending from "./pages/provider/ProviderPending.jsx";
+import ProviderJobs from "./pages/provider/ProviderJobs.jsx";
+import ProviderSettings from "./pages/provider/ProviderSettings.jsx"; // ✅ NEW
 
 /* Customer */
 import CustomerDashboard from "./pages/Customer/CustomerDashboard.jsx";
@@ -60,6 +62,7 @@ export default function App() {
             </ProtectedRoute>
           }
         />
+
         <Route
           path="/provider/dashboard"
           element={
@@ -70,6 +73,18 @@ export default function App() {
             </ProtectedRoute>
           }
         />
+
+        <Route
+          path="/provider/jobs"
+          element={
+            <ProtectedRoute role="provider">
+              <ProviderLayout>
+                <ProviderJobs />
+              </ProviderLayout>
+            </ProtectedRoute>
+          }
+        />
+
         <Route
           path="/provider/community"
           element={
@@ -80,6 +95,18 @@ export default function App() {
             </ProtectedRoute>
           }
         />
+
+        <Route
+          path="/provider/settings"
+          element={
+            <ProtectedRoute role="provider">
+              <ProviderLayout>
+                <ProviderSettings />
+              </ProviderLayout>
+            </ProtectedRoute>
+          }
+        />
+
         <Route
           path="/provider/pending"
           element={

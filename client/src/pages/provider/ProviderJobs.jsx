@@ -38,7 +38,7 @@ export default function ProviderJobs() {
                     job.status === "Pending"
                       ? "text-yellow-600"
                       : job.status === "Completed"
-                      ? "text-green-600"
+                      ? "text-sky-500"
                       : "text-blue-600"
                   }`}
                 >
@@ -47,7 +47,8 @@ export default function ProviderJobs() {
                 <td className="px-4 py-2">
                   <button
                     onClick={() => setModalJob(job)}
-                    className="px-3 py-1 bg-teal-600 text-white rounded-md hover:bg-teal-700 transition text-sm"
+                    className="px-3 py-1 bg-sky-500 text-white rounded-md
+                               hover:bg-sky-600 transition text-sm"
                   >
                     View
                   </button>
@@ -72,8 +73,15 @@ export default function ProviderJobs() {
               <h2 className="text-xl font-semibold mb-4">{modalJob.title}</h2>
               <p><strong>Customer:</strong> {modalJob.customer}</p>
               <p><strong>Date:</strong> {modalJob.date}</p>
-              <p><strong>Status:</strong> {modalJob.status}</p>
-              <p className="mt-2 text-gray-600">Details about this job can go here.</p>
+              <p>
+                <strong>Status:</strong>{" "}
+                <span className="text-sky-500 font-semibold">
+                  {modalJob.status}
+                </span>
+              </p>
+              <p className="mt-2 text-gray-600">
+                Details about this job can go here.
+              </p>
             </div>
           </div>
         </div>
