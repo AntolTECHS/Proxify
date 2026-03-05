@@ -4,9 +4,9 @@ import { useAuth } from "../context/AuthContext.jsx";
 
 /**
  * ProtectedRoute
- * @param {ReactNode} children
- * @param {string} role - optional ("provider", "customer", "admin")
- * @param {string} excludeRole - optional, prevent this role from accessing the route
+ * @param {ReactNode} children - Component(s) to render if allowed
+ * @param {string} role - Optional: "provider", "customer", "admin"
+ * @param {string} excludeRole - Optional: redirect if user has this role
  */
 export default function ProtectedRoute({ children, role, excludeRole }) {
   const { user, isLoading } = useAuth();
@@ -19,32 +19,40 @@ export default function ProtectedRoute({ children, role, excludeRole }) {
     );
   }
 
-  // Not logged in → redirect to login
+  // ---------------- NOT LOGGED IN ----------------
   if (!user) return <Navigate to="/login" replace />;
 
-  // Exclude certain role (used for BecomeProvider)
+  // ---------------- EXCLUDE ROLE ----------------
   if (excludeRole && user.role === excludeRole) {
     return <Navigate to="/" replace />;
   }
 
-  // ---------- PROVIDER ----------
+  // ---------------- PROVIDER ----------------
   if (role === "provider") {
-    if (user.role === "provider" || user.role === "pending") return children;
+    if (user.role === "provider") return children;
+
+    // Redirect non-providers to onboarding
     return <Navigate to="/become-provider" replace />;
   }
 
-  // ---------- CUSTOMER ----------
+  // ---------------- CUSTOMER ----------------
   if (role === "customer") {
-    if (user.role !== "customer") return <Navigate to="/" replace />;
-    return children;
+    if (user.role === "customer") return children;
+
+    // Redirect providers to dashboard
+    if (user.role === "provider") {
+      return <Navigate to="/provider/dashboard" replace />;
+    }
+
+    return <Navigate to="/" replace />;
   }
 
-  // ---------- ADMIN ----------
+  // ---------------- ADMIN ----------------
   if (role === "admin") {
-    if (user.role !== "admin") return <Navigate to="/" replace />;
-    return children;
+    if (user.role === "admin") return children;
+    return <Navigate to="/" replace />;
   }
 
-  // ---------- NO ROLE SPECIFIED ----------
+  // ---------------- DEFAULT ----------------
   return children;
 }

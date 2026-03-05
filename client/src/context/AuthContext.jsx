@@ -1,5 +1,6 @@
 // src/context/AuthContext.jsx
 import { createContext, useContext, useState, useEffect } from "react";
+import { useNavigate } from "react-router-dom";
 
 const AuthContext = createContext();
 export const useAuth = () => useContext(AuthContext);
@@ -10,6 +11,7 @@ export const AuthProvider = ({ children }) => {
   const [status, setStatus] = useState("idle");
   const [error, setError] = useState(null);
   const [isLoading, setIsLoading] = useState(true);
+  const navigate = useNavigate();
 
   const API_URL = import.meta.env.VITE_API_URL || "http://localhost:5000/api";
 
@@ -83,16 +85,17 @@ export const AuthProvider = ({ children }) => {
     setError(null);
 
     if (!token) {
-      setError(new Error("You are not logged in. Please log in again."));
+      const err = new Error("You are not logged in. Please log in again.");
+      setError(err);
       setStatus("error");
-      return { success: false, error: new Error("No token") };
+      return { success: false, error: err };
     }
 
     try {
       const res = await fetch(`${API_URL}/providers/onboard`, {
         method: "POST",
         headers: {
-          Authorization: `Bearer ${token}`, // ✅ important
+          Authorization: `Bearer ${token}`,
         },
         body: formData,
       });
@@ -101,15 +104,21 @@ export const AuthProvider = ({ children }) => {
 
       if (!res.ok) throw new Error(data.message || "Onboarding failed");
 
-      // Update local user role
+      // Use new token returned from backend
+      const newToken = data.token || token;
+
+      // Update user role immediately to provider
       const updatedUser = {
         ...user,
         role: "provider",
-        providerStatus: "pending",
       };
-      saveAuth(updatedUser, token);
 
+      saveAuth(updatedUser, newToken);
       setStatus("success");
+
+      // Redirect directly to provider dashboard
+      navigate("/provider/dashboard", { replace: true });
+
       return { success: true, user: updatedUser };
     } catch (err) {
       setStatus("error");
@@ -118,12 +127,14 @@ export const AuthProvider = ({ children }) => {
     }
   };
 
+  // ---------------- LOGOUT ----------------
   const logout = () => {
     localStorage.removeItem("token");
     localStorage.removeItem("user");
     setUser(null);
     setToken(null);
     setStatus("idle");
+    navigate("/login");
   };
 
   const value = {

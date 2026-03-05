@@ -12,6 +12,7 @@ import authRoutes from "./routes/authRoutes.js";
 import providerRoutes from "./routes/providerRoutes.js";
 import serviceRoutes from "./routes/serviceRoutes.js";
 import bookingRoutes from "./routes/bookingRoutes.js";
+import searchProxy from "./routes/searchProxy.js";
 
 dotenv.config();
 await connectDB();
@@ -53,6 +54,7 @@ app.use("/api/auth", authRoutes);
 app.use("/api/providers", providerRoutes);
 app.use("/api/services", serviceRoutes);
 app.use("/api/bookings", bookingRoutes);
+app.use("/api", searchProxy);
 
 /* ======================
    Health Check

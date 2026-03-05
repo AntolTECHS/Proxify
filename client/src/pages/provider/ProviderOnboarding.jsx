@@ -1,7 +1,6 @@
 // src/pages/provider/ProviderOnboarding.jsx
 import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
-
 import { useAuth } from "../../context/AuthContext";
 
 // Steps
@@ -20,7 +19,6 @@ export default function ProviderOnboarding() {
   const { user, upgradeToProvider, loading: authLoading, error: authError, logout } = useAuth();
   const navigate = useNavigate();
 
-  // Step state
   const [step, setStep] = useState(0);
   const [formData, setFormData] = useState({
     basicInfo: {},
@@ -33,21 +31,17 @@ export default function ProviderOnboarding() {
   const [submitError, setSubmitError] = useState(null);
   const [submitting, setSubmitting] = useState(false);
 
-  // Redirect logic: only redirect users who already completed onboarding
+  // Redirect users who are already providers
   useEffect(() => {
     if (!user) return;
-
     if (user.role === "provider") {
       navigate("/provider/dashboard", { replace: true });
-    } else if (user.providerStatus === "pending") {
-      navigate("/provider/pending", { replace: true });
     }
-    // else: allow new users to access onboarding steps
   }, [user, navigate]);
 
   // Step navigation
   const next = () => setStep((prev) => Math.min(prev + 1, steps.length - 1));
-  const back = () => setStep((prev) => Math.max(prev - 1, 0));
+  const back = () => setStep((prev) => Math.max(prev - 0, 0));
 
   // Update form data
   const update = (section, data) => {
@@ -82,7 +76,6 @@ export default function ProviderOnboarding() {
     setSubmitting(true);
 
     try {
-      // Build FormData
       const payload = new FormData();
       payload.append("basicInfo", JSON.stringify(formData.basicInfo || {}));
       payload.append("services", JSON.stringify(formData.services || []));
@@ -91,15 +84,14 @@ export default function ProviderOnboarding() {
       if (formData.documentsText) payload.append("documentsText", formData.documentsText);
 
       (formData.documents || []).forEach((doc) => {
-        if (doc?.file instanceof File) payload.append("documents", doc.file); // match backend
+        if (doc?.file instanceof File) payload.append("documents", doc.file);
       });
 
-      // Call AuthContext upgradeToProvider
       const result = await upgradeToProvider(payload);
 
       if (result.success) {
-        // Redirect to provider dashboard
-        navigate("/provider/dashboard", { replace: true });
+        // Redirect handled inside upgradeToProvider
+        return;
       } else if (result.error?.message.includes("Token invalid")) {
         alert("Session expired. Please log in again.");
         logout();
@@ -115,7 +107,7 @@ export default function ProviderOnboarding() {
     }
   };
 
-  // Render the current step
+  // Render current step
   const stepProps = { next, back, update, data: formData };
   const renderStep = () => {
     switch (step) {
@@ -142,7 +134,6 @@ export default function ProviderOnboarding() {
     }
   };
 
-  // Show loading if user info is not ready
   if (!user) {
     return (
       <div className="w-full h-screen flex items-center justify-center text-gray-600">
@@ -154,7 +145,9 @@ export default function ProviderOnboarding() {
   return (
     <div className="max-w-4xl mx-auto mt-24 p-6">
       <OnboardingProgress steps={steps} current={step} />
-      <div className="mt-6 bg-white border border-gray-300 rounded-xl shadow p-6">{renderStep()}</div>
+      <div className="mt-6 bg-white border border-gray-300 rounded-xl shadow p-6">
+        {renderStep()}
+      </div>
     </div>
   );
 }

@@ -1,249 +1,304 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect } from "react";
 import {
-  FaCheck,
-  FaTimes,
-  FaCamera,
-  FaTrash,
-  FaUniversity,
-  FaFileAlt,
   FaUser,
   FaMapMarkerAlt,
+  FaSearch,
+  FaCamera,
 } from "react-icons/fa";
-import { GoogleMap, useLoadScript } from "@react-google-maps/api";
+import {
+  MapContainer,
+  TileLayer,
+  Marker,
+  useMapEvents,
+  useMap,
+} from "react-leaflet";
+import L from "leaflet";
 
-/* ========================================================= */
+/* Leaflet marker fix */
+import markerIcon2x from "leaflet/dist/images/marker-icon-2x.png";
+import markerIcon from "leaflet/dist/images/marker-icon.png";
+import markerShadow from "leaflet/dist/images/marker-shadow.png";
+
+delete L.Icon.Default.prototype._getIconUrl;
+L.Icon.Default.mergeOptions({
+  iconRetinaUrl: markerIcon2x,
+  iconUrl: markerIcon,
+  shadowUrl: markerShadow,
+});
+
+/* ================= RE-CENTER MAP ================= */
+function RecenterMap({ lat, lng }) {
+  const map = useMap();
+  useEffect(() => {
+    if (lat && lng) map.setView([lat, lng], 15);
+  }, [lat, lng]);
+  return null;
+}
+
+/* ================= MAIN COMPONENT ================= */
 export default function ProviderSettings() {
   const [editing, setEditing] = useState(false);
   const [successMsg, setSuccessMsg] = useState("");
+  const [errorMsg, setErrorMsg] = useState("");
+  const [searchQuery, setSearchQuery] = useState("");
 
   const [profile, setProfile] = useState({
-    name: "John Provider",
-    phone: "123-456-7890",
-    company: "John Home Services",
-    category: "Plumbing",
-    experience: "5",
-    location: "City, State",
-    bio: "Experienced professional in home services.",
-    photoPreview: null,
-    lat: 37.7749,
-    lng: -122.4194,
+    basicInfo: {
+      providerName: "",
+      email: "",
+      phone: "",
+      businessName: "",
+      bio: "",
+      location: "",
+      photoURL: "",
+    },
+    lat: 0,
+    lng: 0,
   });
 
-  const [bank, setBank] = useState({
-    bankName: "",
-    accountName: "",
-    accountNumber: "",
-    country: "",
-  });
+  useEffect(() => {
+    fetchProfile();
+  }, []);
 
-  const [certifications, setCertifications] = useState([]);
+  const fetchProfile = async () => {
+    try {
+      const token = localStorage.getItem("token");
+      if (!token) throw new Error("No token found");
 
-  const handleSave = () => {
-    setEditing(false);
-    setSuccessMsg("Settings updated successfully!");
-    setTimeout(() => setSuccessMsg(""), 3000);
+      const res = await fetch("http://localhost:5000/api/providers/me", {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (!res.ok) throw new Error("Failed to fetch profile");
+
+      const data = await res.json();
+      setProfile(data);
+    } catch (err) {
+      console.error(err);
+      setErrorMsg(err.message || "Failed to load profile");
+    }
+  };
+
+  /* ================= SAVE PROFILE ================= */
+  const handleSave = async () => {
+    try {
+      const token = localStorage.getItem("token");
+      const formData = new FormData();
+      formData.append("basicInfo", JSON.stringify(profile.basicInfo));
+      formData.append("lat", profile.lat);
+      formData.append("lng", profile.lng);
+
+      if (profile.basicInfo.photoFile) formData.append("photo", profile.basicInfo.photoFile);
+
+      const res = await fetch("http://localhost:5000/api/providers/update", {
+        method: "PUT",
+        headers: { Authorization: `Bearer ${token}` },
+        body: formData,
+      });
+
+      if (!res.ok) throw new Error("Failed to update profile");
+
+      const updated = await res.json();
+      setProfile(updated);
+      setEditing(false);
+      setSuccessMsg("Settings updated successfully!");
+      setTimeout(() => setSuccessMsg(""), 3000);
+    } catch (err) {
+      console.error(err);
+      setErrorMsg(err.message || "Failed to update profile");
+    }
+  };
+
+  /* ================= SEARCH LOCATION ================= */
+  const handleSearch = async (e) => {
+    e.preventDefault();
+    if (!searchQuery) return;
+
+    try {
+      const res = await fetch(
+        `http://localhost:5000/api/search?q=${encodeURIComponent(searchQuery)}`
+      );
+      const data = await res.json();
+
+      if (data.length > 0) {
+        const place = data[0];
+        setProfile((prev) => ({
+          ...prev,
+          lat: parseFloat(place.lat),
+          lng: parseFloat(place.lon),
+          basicInfo: { ...prev.basicInfo, location: place.display_name },
+        }));
+      } else {
+        setErrorMsg("Place not found");
+        setTimeout(() => setErrorMsg(""), 3000);
+      }
+    } catch {
+      setErrorMsg("Search failed");
+    }
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-100 to-slate-200 px-4 py-6 sm:py-8">
+    <div className="min-h-screen bg-gradient-to-br from-slate-100 to-slate-200 px-4 py-8">
       <div className="max-w-6xl mx-auto space-y-8">
         {/* HEADER */}
-        <header className="space-y-1">
-          <h1 className="text-2xl sm:text-3xl font-bold text-slate-800">
-            Provider Settings
-          </h1>
+        <header>
+          <h1 className="text-3xl font-bold text-slate-800">Provider Settings</h1>
           <p className="text-slate-600 text-sm">
-            Manage your public profile, service area, and payout details
+            Manage your public profile, service location, and photo
           </p>
         </header>
 
-        {successMsg && (
-          <div className="rounded-lg border-l-4 border-green-500 bg-green-100 p-4 text-green-700">
-            {successMsg}
-          </div>
-        )}
+        {/* MESSAGES */}
+        {successMsg && <div className="bg-green-100 text-green-700 p-4 rounded-lg">{successMsg}</div>}
+        {errorMsg && <div className="bg-red-100 text-red-700 p-4 rounded-lg">{errorMsg}</div>}
 
-        {/* PROFILE */}
-        <Section title="Profile Information" icon={<FaUser />}>
-          <div className="col-span-full flex flex-col sm:flex-row gap-6">
-            <div className="relative mx-auto sm:mx-0 shrink-0">
-              <img
-                src={
-                  profile.photoPreview ||
-                  "https://ui-avatars.com/api/?name=Provider&background=0ea5e9&color=fff"
-                }
-                className="w-28 h-28 rounded-full border shadow object-cover"
-              />
+        {/* ================= BASIC INFO ================= */}
+        <Section title="Basic Information" icon={<FaUser />}>
+          <div className="grid md:grid-cols-2 gap-6">
+            {/* PHOTO */}
+            <div className="col-span-full flex items-center gap-6">
+              <div className="w-24 h-24 rounded-full overflow-hidden border bg-slate-100">
+                {profile.basicInfo.photoURL ? (
+                  <img
+                    src={profile.basicInfo.photoURL}
+                    alt="Profile"
+                    className="w-full h-full object-cover"
+                  />
+                ) : (
+                  <div className="w-full h-full flex items-center justify-center text-slate-400">
+                    <FaCamera size={28} />
+                  </div>
+                )}
+              </div>
+
               {editing && (
-                <label className="absolute bottom-0 right-0 bg-sky-500 p-2 rounded-full text-white cursor-pointer shadow">
-                  <FaCamera size={14} />
+                <label className="cursor-pointer bg-sky-500 text-white px-4 py-2 rounded-lg text-sm">
+                  Upload Photo
                   <input
                     type="file"
                     hidden
-                    onChange={(e) =>
-                      setProfile({
-                        ...profile,
-                        photoPreview: URL.createObjectURL(e.target.files[0]),
-                      })
-                    }
+                    accept="image/*"
+                    onChange={(e) => {
+                      const file = e.target.files[0];
+                      if (!file) return;
+                      const preview = URL.createObjectURL(file);
+                      setProfile((prev) => ({
+                        ...prev,
+                        basicInfo: { ...prev.basicInfo, photoFile: file, photoURL: preview },
+                      }));
+                    }}
                   />
                 </label>
               )}
             </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 flex-1">
-              <Input
-                label="Full Name"
-                value={profile.name}
+            <InputField
+              label="Provider Name"
+              value={profile.basicInfo.providerName}
+              disabled={!editing}
+              onChange={(val) =>
+                setProfile((prev) => ({
+                  ...prev,
+                  basicInfo: { ...prev.basicInfo, providerName: val },
+                }))
+              }
+            />
+            <InputField
+              label="Business Name"
+              value={profile.basicInfo.businessName}
+              disabled={!editing}
+              onChange={(val) =>
+                setProfile((prev) => ({
+                  ...prev,
+                  basicInfo: { ...prev.basicInfo, businessName: val },
+                }))
+              }
+            />
+            <InputField
+              label="Email"
+              value={profile.basicInfo.email}
+              disabled={!editing}
+              onChange={(val) =>
+                setProfile((prev) => ({
+                  ...prev,
+                  basicInfo: { ...prev.basicInfo, email: val },
+                }))
+              }
+            />
+            <InputField
+              label="Phone"
+              value={profile.basicInfo.phone}
+              disabled={!editing}
+              onChange={(val) =>
+                setProfile((prev) => ({
+                  ...prev,
+                  basicInfo: { ...prev.basicInfo, phone: val },
+                }))
+              }
+            />
+
+            <div className="col-span-full">
+              <label className="block text-sm font-medium mb-1">Bio</label>
+              <textarea
+                rows="4"
                 disabled={!editing}
-                onChange={(e) => setProfile({ ...profile, name: e.target.value })}
-              />
-              <Input
-                label="Phone"
-                value={profile.phone}
-                disabled={!editing}
-                onChange={(e) => setProfile({ ...profile, phone: e.target.value })}
-              />
-              <Input
-                label="Company"
-                value={profile.company}
-                disabled={!editing}
-                onChange={(e) => setProfile({ ...profile, company: e.target.value })}
-              />
-              <Input
-                label="Category"
-                value={profile.category}
-                disabled={!editing}
-                onChange={(e) => setProfile({ ...profile, category: e.target.value })}
-              />
-              <Input
-                label="Experience (years)"
-                value={profile.experience}
-                disabled={!editing}
-                onChange={(e) => setProfile({ ...profile, experience: e.target.value })}
-              />
-              <Input
-                label="Location Description"
-                value={profile.location}
-                disabled={!editing}
-                onChange={(e) => setProfile({ ...profile, location: e.target.value })}
-              />
-              <Textarea
-                label="Bio"
-                value={profile.bio}
-                disabled={!editing}
-                onChange={(e) => setProfile({ ...profile, bio: e.target.value })}
+                value={profile.basicInfo.bio}
+                onChange={(e) =>
+                  setProfile((prev) => ({
+                    ...prev,
+                    basicInfo: { ...prev.basicInfo, bio: e.target.value },
+                  }))
+                }
+                className="w-full px-4 py-2 border rounded-lg"
               />
             </div>
           </div>
         </Section>
 
-        {/* MAP WITH SEARCH */}
+        {/* ================= SERVICE LOCATION ================= */}
         <Section title="Service Location" icon={<FaMapMarkerAlt />}>
-          <div className="col-span-full space-y-3">
-            <LocationPicker profile={profile} setProfile={setProfile} editing={editing} />
-            <p className="text-xs text-slate-500 text-center sm:text-left">
-              Lat: {profile.lat.toFixed(4)} | Lng: {profile.lng.toFixed(4)}
-            </p>
-          </div>
+          {editing && (
+            <form onSubmit={handleSearch} className="flex gap-2 mb-4">
+              <input
+                type="text"
+                placeholder="Search location..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="flex-1 px-4 py-2 border rounded-lg"
+              />
+              <button
+                type="submit"
+                className="px-4 py-2 bg-sky-500 text-white rounded-lg flex items-center gap-2"
+              >
+                <FaSearch /> Search
+              </button>
+            </form>
+          )}
+
+          <LeafletMap profile={profile} setProfile={setProfile} editing={editing} />
+
+          <p className="text-xs text-slate-500 mt-2">
+            Lat: {profile.lat?.toFixed(5) || "0.00000"} | Lng: {profile.lng?.toFixed(5) || "0.00000"}
+          </p>
         </Section>
 
-        {/* BANK */}
-        <Section title="Payout Details" icon={<FaUniversity />}>
-          <Input
-            label="Bank Name"
-            value={bank.bankName}
-            disabled={!editing}
-            onChange={(e) => setBank({ ...bank, bankName: e.target.value })}
-          />
-          <Input
-            label="Account Holder"
-            value={bank.accountName}
-            disabled={!editing}
-            onChange={(e) => setBank({ ...bank, accountName: e.target.value })}
-          />
-          <Input
-            label="Account Number"
-            value={bank.accountNumber}
-            disabled={!editing}
-            onChange={(e) => setBank({ ...bank, accountNumber: e.target.value })}
-          />
-          <Input
-            label="Country"
-            value={bank.country}
-            disabled={!editing}
-            onChange={(e) => setBank({ ...bank, country: e.target.value })}
-          />
-        </Section>
-
-        {/* CERTIFICATIONS */}
-        <Section title="Certifications" icon={<FaFileAlt />}>
-          <div className="col-span-full space-y-4">
-            {editing && (
-              <label className="inline-block w-full sm:w-auto text-center bg-sky-500 text-white px-5 py-2 rounded-lg cursor-pointer shadow">
-                Upload Certificates
-                <input
-                  type="file"
-                  multiple
-                  hidden
-                  onChange={(e) =>
-                    setCertifications([...certifications, ...e.target.files])
-                  }
-                />
-              </label>
-            )}
-
-            <ul className="space-y-2">
-              {certifications.map((file, i) => (
-                <li
-                  key={i}
-                  className="flex justify-between items-center bg-slate-100 p-3 rounded-lg"
-                >
-                  <span className="text-sm truncate">{file.name}</span>
-                  {editing && (
-                    <button
-                      onClick={() =>
-                        setCertifications(certifications.filter((_, x) => x !== i))
-                      }
-                    >
-                      <FaTrash className="text-red-500" />
-                    </button>
-                  )}
-                </li>
-              ))}
-            </ul>
-          </div>
-        </Section>
-
-        {/* PUBLIC PROFILE */}
+        {/* ================= PUBLIC PROFILE PREVIEW ================= */}
         <Section title="Public Profile Preview" icon={<FaUser />}>
-          <div className="col-span-full">
-            <PublicProfileCard profile={profile} />
-          </div>
+          <PublicProfileCard profile={profile} />
         </Section>
 
-        {/* ACTIONS */}
-        <div className="flex flex-col sm:flex-row justify-end gap-3">
+        {/* ACTION BUTTONS */}
+        <div className="flex justify-end gap-3">
           {editing ? (
             <>
-              <button
-                onClick={() => setEditing(false)}
-                className="w-full sm:w-auto px-5 py-2 bg-slate-200 rounded-lg flex items-center justify-center gap-2"
-              >
-                <FaTimes /> Cancel
+              <button onClick={() => setEditing(false)} className="px-5 py-2 bg-gray-200 rounded-lg">
+                Cancel
               </button>
-              <button
-                onClick={handleSave}
-                className="w-full sm:w-auto px-6 py-2 bg-sky-500 text-white rounded-lg flex items-center justify-center gap-2 shadow"
-              >
-                <FaCheck /> Save Changes
+              <button onClick={handleSave} className="px-6 py-2 bg-sky-500 text-white rounded-lg">
+                Save
               </button>
             </>
           ) : (
-            <button
-              onClick={() => setEditing(true)}
-              className="w-full sm:w-auto px-6 py-2 bg-sky-500 text-white rounded-lg shadow"
-            >
+            <button onClick={() => setEditing(true)} className="px-6 py-2 bg-sky-500 text-white rounded-lg">
               Edit Settings
             </button>
           )}
@@ -253,162 +308,95 @@ export default function ProviderSettings() {
   );
 }
 
-/* ========================================================= */
-/* LOCATION PICKER WITH SEARCH */
-function LocationPicker({ profile, setProfile, editing }) {
-  const { isLoaded, loadError } = useLoadScript({
-    googleMapsApiKey: import.meta.env.VITE_GOOGLE_MAPS_API_KEY,
-    libraries: ["places"],
-  });
-
-  const mapRef = useRef(null);
-  const markerRef = useRef(null);
-  const inputRef = useRef(null);
-  const autocompleteRef = useRef(null);
-
-  useEffect(() => {
-    if (!isLoaded || !editing) return;
-
-    // Autocomplete initialization
-    if (inputRef.current && !autocompleteRef.current) {
-      autocompleteRef.current = new window.google.maps.places.Autocomplete(inputRef.current, {
-        fields: ["geometry", "formatted_address"],
-      });
-      autocompleteRef.current.addListener("place_changed", () => {
-        const place = autocompleteRef.current.getPlace();
-        if (place.geometry?.location) {
-          const lat = place.geometry.location.lat();
-          const lng = place.geometry.location.lng();
-          setProfile({ ...profile, lat, lng, location: place.formatted_address });
-          mapRef.current?.panTo({ lat, lng });
-          if (markerRef.current) markerRef.current.setPosition({ lat, lng });
-        }
-      });
-    }
-
-    // Marker initialization
-    if (mapRef.current && !markerRef.current) {
-      markerRef.current = new window.google.maps.marker.AdvancedMarkerElement({
-        position: { lat: profile.lat, lng: profile.lng },
-        map: mapRef.current,
-        draggable: editing,
-      });
-      markerRef.current.addListener("dragend", (e) => {
-        setProfile({ ...profile, lat: e.latLng.lat(), lng: e.latLng.lng() });
-      });
-    }
-
-    // Update marker when editing toggles
-    if (markerRef.current) {
-      markerRef.current.setPosition({ lat: profile.lat, lng: profile.lng });
-      markerRef.current.setDraggable(editing);
-    }
-  }, [isLoaded, editing]);
-
-  if (!isLoaded) return <p>Loading map…</p>;
-  if (loadError) return <p>Error loading map</p>;
-
-  return (
-    <div className="flex flex-col gap-2">
-      {editing && (
-        <input
-          ref={inputRef}
-          placeholder="Search address..."
-          className="w-full sm:w-80 px-4 py-2 rounded-lg border focus:ring-2 focus:ring-sky-400"
-        />
-      )}
-      <div className="rounded-xl overflow-hidden border shadow">
-        <GoogleMap
-          mapContainerStyle={{ width: "100%", height: "280px" }}
-          zoom={12}
-          center={{ lat: profile.lat, lng: profile.lng }}
-          onLoad={(map) => (mapRef.current = map)}
-        />
-      </div>
-    </div>
-  );
-}
-
-/* ========================================================= */
-/* PUBLIC PROFILE CARD */
-function PublicProfileCard({ profile }) {
-  return (
-    <div className="mx-auto w-full max-w-3xl rounded-2xl border bg-white shadow-lg overflow-hidden">
-      <div className="h-24 sm:h-32 bg-gradient-to-r from-sky-500 to-sky-600" />
-
-      <div className="px-5 sm:px-6 -mt-12 sm:-mt-14">
-        <div className="flex flex-col sm:flex-row sm:items-end gap-4">
-          <img
-            src={
-              profile.photoPreview ||
-              "https://ui-avatars.com/api/?name=Provider&background=0ea5e9&color=fff"
-            }
-            className="w-24 h-24 rounded-full border-4 border-white shadow mx-auto sm:mx-0 object-cover"
-          />
-
-          <div className="flex-1 text-center sm:text-left">
-            <h3 className="text-lg font-semibold text-slate-800">{profile.name}</h3>
-            <p className="text-slate-600">{profile.category}</p>
-            <p className="text-xs text-slate-500">
-              {profile.experience}+ years • {profile.location}
-            </p>
-          </div>
-
-          <button
-            disabled
-            className="w-full sm:w-auto px-6 py-2 bg-sky-500 text-white rounded-xl opacity-70 cursor-not-allowed"
-          >
-            Contact
-          </button>
-        </div>
-      </div>
-
-      <div className="px-5 sm:px-6 pb-6 pt-4 text-sm text-slate-600 space-y-3">
-        <p className="text-center sm:text-left">{profile.bio}</p>
-        <div className="flex items-center justify-center sm:justify-start gap-2 text-slate-500">
-          <FaMapMarkerAlt className="text-sky-500 shrink-0" />
-          {profile.lat.toFixed(4)}, {profile.lng.toFixed(4)}
-        </div>
-      </div>
-    </div>
-  );
-}
-
-/* ========================================================= */
-/* UI HELPERS */
-function Section({ title, icon, children }) {
-  return (
-    <div className="bg-white rounded-xl border shadow-sm">
-      <div className="px-6 py-4 border-b bg-slate-50 flex items-center gap-3">
-        <span className="text-sky-500">{icon}</span>
-        <h2 className="font-semibold">{title}</h2>
-      </div>
-      <div className="p-6 grid grid-cols-1 sm:grid-cols-2 gap-5">{children}</div>
-    </div>
-  );
-}
-
-function Input({ label, ...props }) {
+/* ================= INPUT FIELD ================= */
+function InputField({ label, value, onChange, disabled }) {
   return (
     <div>
-      <label className="text-sm font-medium text-slate-700">{label}</label>
+      <label className="block text-sm font-medium mb-1">{label}</label>
       <input
-        {...props}
-        className="w-full mt-1 rounded-lg border px-4 py-2.5 disabled:bg-slate-100 focus:ring-2 focus:ring-sky-400"
+        type="text"
+        disabled={disabled}
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        className="w-full px-4 py-2 border rounded-lg"
       />
     </div>
   );
 }
 
-function Textarea({ label, ...props }) {
+/* ================= MAP COMPONENT ================= */
+function LeafletMap({ profile, setProfile, editing }) {
+  function ClickHandler() {
+    useMapEvents({
+      click(e) {
+        if (!editing) return;
+        setProfile((prev) => ({ ...prev, lat: e.latlng.lat, lng: e.latlng.lng }));
+      },
+    });
+    return null;
+  }
+
   return (
-    <div className="sm:col-span-2">
-      <label className="text-sm font-medium text-slate-700">{label}</label>
-      <textarea
-        {...props}
-        rows={4}
-        className="w-full mt-1 rounded-lg border px-4 py-2.5 resize-none disabled:bg-slate-100 focus:ring-2 focus:ring-sky-400"
-      />
+    <div className="w-full h-[320px] rounded-xl overflow-hidden border">
+      <MapContainer center={[profile.lat || 0, profile.lng || 0]} zoom={15} className="w-full h-full">
+        <TileLayer url="https://{s}.tile.openstreetmap.fr/hot/{z}/{x}/{y}.png" />
+        <RecenterMap lat={profile.lat} lng={profile.lng} />
+        {profile.lat && profile.lng && <Marker draggable={editing} position={[profile.lat, profile.lng]} />}
+        <ClickHandler />
+      </MapContainer>
+    </div>
+  );
+}
+
+/* ================= PUBLIC PROFILE CARD ================= */
+function PublicProfileCard({ profile }) {
+  return (
+    <div className="bg-white rounded-xl shadow p-6 space-y-6">
+      <div className="flex items-center gap-6">
+        <div className="w-24 h-24 rounded-full overflow-hidden border bg-slate-100">
+          {profile.basicInfo.photoURL ? (
+            <img src={profile.basicInfo.photoURL} alt="Profile" className="w-full h-full object-cover" />
+          ) : (
+            <div className="w-full h-full flex items-center justify-center text-slate-400"><FaCamera size={28} /></div>
+          )}
+        </div>
+
+        <div>
+          <h2 className="text-2xl font-bold">{profile.basicInfo.providerName || "Provider Name"}</h2>
+          <p className="text-slate-600">{profile.basicInfo.businessName}</p>
+          <p className="text-sm text-slate-500">{profile.basicInfo.email}</p>
+          <p className="text-sm text-slate-500">{profile.basicInfo.phone}</p>
+        </div>
+      </div>
+
+      <div>
+        <h3 className="font-semibold mb-2">About</h3>
+        <p className="text-sm text-slate-600">{profile.basicInfo.bio || "No bio provided."}</p>
+      </div>
+
+      <div>
+        <h3 className="font-semibold mb-2">Service Location</h3>
+        <p className="text-sm text-slate-600 mb-2">{profile.basicInfo.location || "Location not specified"}</p>
+        {profile.lat && profile.lng && (
+          <div className="h-56 rounded-lg overflow-hidden border">
+            <MapContainer center={[profile.lat, profile.lng]} zoom={15} className="w-full h-full" scrollWheelZoom={false}>
+              <TileLayer url="https://{s}.tile.openstreetmap.fr/hot/{z}/{x}/{y}.png" />
+              <RecenterMap lat={profile.lat} lng={profile.lng} />
+              <Marker position={[profile.lat, profile.lng]} />
+            </MapContainer>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/* ================= SECTION COMPONENT ================= */
+function Section({ title, icon, children }) {
+  return (
+    <div className="bg-white rounded-xl border shadow-sm p-6 space-y-4">
+      <div className="flex items-center gap-2 text-sky-600 font-semibold">{icon}{title}</div>
+      {children}
     </div>
   );
 }

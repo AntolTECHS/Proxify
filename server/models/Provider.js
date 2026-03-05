@@ -3,6 +3,13 @@ import mongoose from "mongoose";
 const providerSchema = new mongoose.Schema(
   {
     user: { type: mongoose.Schema.Types.ObjectId, ref: "User", required: true },
+
+    status: {
+      type: String,
+      enum: ["pending", "approved", "rejected"],
+      default: "approved"
+    },
+
     basicInfo: {
       providerName: { type: String, required: true },
       email: { type: String, required: true },
@@ -10,12 +17,17 @@ const providerSchema = new mongoose.Schema(
       location: String,
       businessName: String,
       bio: String,
+      photoURL: String,
     },
+
+    category: String,
+    experience: String,
+    lat: Number,
+    lng: Number,
+
     services: [{ name: String, price: Number }],
-    servicesDescription: String,
-    availability: {},
+
     documents: [{ name: String, path: String, size: Number, type: String }],
-    documentsText: String,
   },
   { timestamps: true }
 );

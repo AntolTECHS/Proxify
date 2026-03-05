@@ -1,18 +1,15 @@
 // src/pages/customer/CustomerDashboard.jsx
 import { useState, useEffect, useMemo } from "react";
-import {
-  FaClipboardList,
-  FaUsers,
-  FaStar,
-  FaClock,
-  FaTimes,
-} from "react-icons/fa";
+import { FaClipboardList, FaUsers, FaStar, FaClock, FaTimes } from "react-icons/fa";
 import { useAuth } from "../../context/AuthContext.jsx";
 
-const API_URL = "http://localhost:5000/api";
+const API_URL = import.meta.env.VITE_API_URL || "http://localhost:5000/api";
 
 export default function CustomerDashboard() {
   const { user, token } = useAuth();
+
+  const [customerLat, setCustomerLat] = useState(null);
+  const [customerLng, setCustomerLng] = useState(null);
 
   const [bookings, setBookings] = useState([]);
   const [providers, setProviders] = useState([]);
@@ -21,30 +18,44 @@ export default function CustomerDashboard() {
   const [currentPage, setCurrentPage] = useState(1);
 
   const [selectedProvider, setSelectedProvider] = useState(null);
-  const [quickBooking, setQuickBooking] = useState({
-    date: "",
-    time: "",
-    notes: "",
-  });
+  const [quickBooking, setQuickBooking] = useState({ date: "", time: "", notes: "" });
+
+  // Filters
+  const [distanceFilter, setDistanceFilter] = useState(null);
+  const [serviceFilter, setServiceFilter] = useState("");
 
   const BOOKINGS_PER_PAGE = 5;
 
+  // Get customer geolocation
+  useEffect(() => {
+    if (navigator.geolocation) {
+      navigator.geolocation.getCurrentPosition(
+        (pos) => {
+          setCustomerLat(pos.coords.latitude);
+          setCustomerLng(pos.coords.longitude);
+        },
+        () => console.warn("Location access denied")
+      );
+    }
+  }, []);
+
+  // Fetch bookings and providers
   useEffect(() => {
     if (!user || !token) return;
 
     const fetchData = async () => {
       try {
-        const [bookingsRes, providersRes] = await Promise.all([
-          fetch(`${API_URL}/bookings?customerId=${user._id || user.id}`, {
-            headers: { Authorization: `Bearer ${token}` },
-          }),
-          fetch(`${API_URL}/providers`, {
-            headers: { Authorization: `Bearer ${token}` },
-          }),
-        ]);
+        const bookingsRes = await fetch(`${API_URL}/bookings?customerId=${user._id || user.id}`, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        const bookingsData = bookingsRes.ok ? await bookingsRes.json() : [];
+        setBookings(bookingsData);
 
-        setBookings(bookingsRes.ok ? await bookingsRes.json() : []);
-        setProviders(providersRes.ok ? await providersRes.json() : []);
+        const providersRes = await fetch(`${API_URL}/providers`, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        const providersData = providersRes.ok ? await providersRes.json() : [];
+        setProviders(providersData);
       } catch (err) {
         console.error("Dashboard fetch failed:", err);
         setBookings([]);
@@ -58,15 +69,21 @@ export default function CustomerDashboard() {
   const safeBookings = useMemo(() => (Array.isArray(bookings) ? bookings : []), [bookings]);
   const safeProviders = useMemo(() => (Array.isArray(providers) ? providers : []), [providers]);
 
+  // Unique service options
+  const allServices = useMemo(() => {
+    const names = safeProviders.flatMap((p) => p.services?.map((s) => s.name) || []);
+    return [...new Set(names)];
+  }, [safeProviders]);
+
+  // Filter bookings by status and search
   const filteredBookings = useMemo(() => {
     return safeBookings.filter((b) => {
       const service = b?.service?.toLowerCase() || "";
-      const provider = b?.providerName?.toLowerCase() || "";
-
+      const providerName = b?.providerName?.toLowerCase() || "";
       return (
         (statusFilter === "All" || b.status === statusFilter) &&
         (service.includes(searchTerm.toLowerCase()) ||
-          provider.includes(searchTerm.toLowerCase()))
+          providerName.includes(searchTerm.toLowerCase()))
       );
     });
   }, [safeBookings, statusFilter, searchTerm]);
@@ -77,10 +94,42 @@ export default function CustomerDashboard() {
     currentPage * BOOKINGS_PER_PAGE
   );
 
-  const filteredProviders = useMemo(
-    () => safeProviders.filter((p) => (p?.name || "").toLowerCase().includes(searchTerm.toLowerCase())),
-    [safeProviders, searchTerm]
-  );
+  // Helper: Calculate distance in km
+  const getDistance = (lat1, lng1, lat2, lng2) => {
+    if (!lat1 || !lng1 || !lat2 || !lng2) return null;
+    const R = 6371; // km
+    const dLat = ((lat2 - lat1) * Math.PI) / 180;
+    const dLng = ((lng2 - lng1) * Math.PI) / 180;
+    const a =
+      Math.sin(dLat / 2) ** 2 +
+      Math.cos((lat1 * Math.PI) / 180) *
+        Math.cos((lat2 * Math.PI) / 180) *
+        Math.sin(dLng / 2) ** 2;
+    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+    return R * c;
+  };
+
+  // Filter providers by search, service, and distance
+  const filteredProviders = useMemo(() => {
+    return safeProviders.filter((p) => {
+      const matchesSearch =
+        (p.basicInfo?.providerName || "").toLowerCase().includes(searchTerm.toLowerCase());
+
+      const matchesService =
+        !serviceFilter ||
+        p.services?.some((s) => s.name.toLowerCase() === serviceFilter.toLowerCase());
+
+      const matchesDistance =
+        !distanceFilter ||
+        (customerLat &&
+          customerLng &&
+          p.lat &&
+          p.lng &&
+          getDistance(customerLat, customerLng, p.lat, p.lng) <= distanceFilter);
+
+      return matchesSearch && matchesService && matchesDistance;
+    });
+  }, [safeProviders, searchTerm, serviceFilter, distanceFilter, customerLat, customerLng]);
 
   const avgRating = useMemo(() => {
     if (!safeProviders.length) return "0.0";
@@ -108,8 +157,8 @@ export default function CustomerDashboard() {
         },
         body: JSON.stringify({
           customerId: user._id || user.id,
-          providerId: selectedProvider._id || selectedProvider.id,
-          service: selectedProvider.service,
+          providerId: selectedProvider._id,
+          service: selectedProvider.services?.[0]?.name || "General Service",
           ...quickBooking,
         }),
       });
@@ -172,23 +221,91 @@ export default function CustomerDashboard() {
         )}
       </Section>
 
-      {/* PROVIDERS */}
+      {/* FILTERS */}
       <Section title="Available Providers">
+        <div className="flex flex-wrap gap-4 mb-4 items-center">
+          {/* Distance Filter */}
+          <div className="flex items-center gap-2">
+            <label className="text-gray-700 font-medium">Max Distance (km):</label>
+            <input
+              type="number"
+              min="1"
+              value={distanceFilter || ""}
+              onChange={(e) => setDistanceFilter(e.target.value ? Number(e.target.value) : null)}
+              className="border rounded px-2 py-1 w-20"
+            />
+          </div>
+
+          {/* Service Filter */}
+          <div className="flex items-center gap-2">
+            <label className="text-gray-700 font-medium">Service:</label>
+            <select
+              value={serviceFilter}
+              onChange={(e) => setServiceFilter(e.target.value)}
+              className="border rounded px-2 py-1"
+            >
+              <option value="">All</option>
+              {allServices.map((s) => (
+                <option key={s} value={s}>
+                  {s}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          {/* Reset Filters */}
+          <button
+            onClick={() => {
+              setDistanceFilter(null);
+              setServiceFilter("");
+            }}
+            className="ml-auto px-3 py-1 bg-blue-500 text-white rounded hover:bg-blue-600 transition"
+          >
+            Reset
+          </button>
+        </div>
+
         {filteredProviders.length === 0 ? (
           <Empty text="No providers available." />
         ) : (
           <div className="grid md:grid-cols-3 gap-6">
             {filteredProviders.map((p) => (
               <div
-                key={p._id || p.id}
+                key={p._id}
                 className="bg-white p-4 rounded-xl shadow hover:shadow-lg transition cursor-pointer"
                 onClick={() => openQuickBooking(p)}
               >
+                {p.basicInfo?.photoURL ? (
+                  <img
+                    src={p.basicInfo.photoURL}
+                    alt={p.basicInfo.providerName}
+                    className="w-full h-40 object-cover rounded-lg mb-2"
+                  />
+                ) : (
+                  <div className="w-full h-40 bg-gray-200 flex items-center justify-center rounded-lg mb-2">
+                    No Photo
+                  </div>
+                )}
+
                 <h3 className="font-bold text-lg" style={{ color: "#0ea5e9" }}>
-                  {p.name}
+                  {p.basicInfo?.providerName}
                 </h3>
-                <p className="text-gray-600">{p.service}</p>
-                <p className="mt-1" style={{ color: "#0ea5e9" }}>⭐ {p.rating || "N/A"}</p>
+
+                <p className="text-gray-600">
+                  {p.services?.length > 0
+                    ? p.services.map((s) => `${s.name} ($${s.price})`).join(", ")
+                    : "General Service"}
+                </p>
+
+                <p className="mt-1 text-yellow-500">
+                  ⭐ {p.rating ? p.rating.toFixed(1) : "N/A"}
+                </p>
+
+                {customerLat && customerLng && p.lat && p.lng && (
+                  <p className="text-gray-500 text-sm">
+                    {getDistance(customerLat, customerLng, p.lat, p.lng).toFixed(1)} km away
+                  </p>
+                )}
               </div>
             ))}
           </div>
@@ -199,7 +316,7 @@ export default function CustomerDashboard() {
       {selectedProvider && (
         <Modal onClose={() => setSelectedProvider(null)}>
           <h2 className="text-xl font-bold mb-4" style={{ color: "#0ea5e9" }}>
-            Book {selectedProvider.name}
+            Book {selectedProvider.basicInfo?.providerName}
           </h2>
 
           <input
@@ -246,19 +363,22 @@ const Stat = ({ icon, label, value }) => (
 
 const Section = ({ title, children }) => (
   <div className="bg-white p-6 rounded-xl shadow mb-10">
-    <h2 className="text-xl font-semibold mb-4" style={{ color: "#0ea5e9" }}>{title}</h2>
+    <h2 className="text-xl font-semibold mb-4" style={{ color: "#0ea5e9" }}>
+      {title}
+    </h2>
     {children}
   </div>
 );
 
-const Empty = ({ text }) => (
-  <p className="text-gray-500 text-center py-8">{text}</p>
-);
+const Empty = ({ text }) => <p className="text-gray-500 text-center py-8">{text}</p>;
 
 const Modal = ({ children, onClose }) => (
   <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
     <div className="bg-white p-6 rounded-xl w-96 relative">
-      <button className="absolute top-3 right-3 text-gray-500 hover:text-gray-700" onClick={onClose}>
+      <button
+        className="absolute top-3 right-3 text-gray-500 hover:text-gray-700"
+        onClick={onClose}
+      >
         <FaTimes />
       </button>
       {children}
