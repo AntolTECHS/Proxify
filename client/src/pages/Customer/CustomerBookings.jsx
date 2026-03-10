@@ -10,7 +10,7 @@ import {
 } from "react-icons/fa";
 import { useAuth } from "../../context/AuthContext.jsx";
 
-const API_URL = "http://localhost:5000/api";
+const API_URL = import.meta.env.VITE_API_URL || "http://localhost:5000/api";
 const FILTERS = ["All", "Upcoming", "Completed", "Cancelled"];
 
 export default function CustomerBookings() {
@@ -19,23 +19,24 @@ export default function CustomerBookings() {
   const [filter, setFilter] = useState("All");
   const [loading, setLoading] = useState(true);
 
-  const [selectedBooking, setSelectedBooking] = useState(null); // drawer
-  const [rescheduleBooking, setRescheduleBooking] = useState(null); // modal
+  const [selectedBooking, setSelectedBooking] = useState(null);
+  const [rescheduleBooking, setRescheduleBooking] = useState(null);
   const [rescheduleData, setRescheduleData] = useState({ date: "", time: "" });
 
+  /* ================= FETCH BOOKINGS ================= */
   useEffect(() => {
     if (!user || !token) return;
 
     const fetchBookings = async () => {
+      setLoading(true);
       try {
-        const res = await fetch(
-          `${API_URL}/bookings?customerId=${user._id || user.id}`,
-          { headers: { Authorization: `Bearer ${token}` } }
-        );
+        const res = await fetch(`${API_URL}/bookings`, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
         const data = await res.json();
-        setBookings(Array.isArray(data) ? data : []);
+        setBookings(Array.isArray(data.bookings) ? data.bookings : []);
       } catch (err) {
-        console.error(err);
+        console.error("Fetch bookings error:", err);
         setBookings([]);
       } finally {
         setLoading(false);
@@ -45,106 +46,131 @@ export default function CustomerBookings() {
     fetchBookings();
   }, [user, token]);
 
+  /* ================= FILTER LOGIC ================= */
   const filteredBookings = bookings.filter((b) => {
     if (filter === "All") return true;
-    if (filter === "Upcoming") return ["Scheduled", "Pending"].includes(b.status);
-    if (filter === "Completed") return b.status === "Completed";
-    if (filter === "Cancelled") return b.status === "Cancelled";
+
+    const isUpcoming =
+      ["pending", "accepted", "in_progress"].includes(b.status) &&
+      new Date(b.scheduledAt) > new Date();
+    const isCompleted = b.status === "completed";
+    const isCancelled = b.status === "cancelled";
+
+    if (filter === "Upcoming") return isUpcoming;
+    if (filter === "Completed") return isCompleted;
+    if (filter === "Cancelled") return isCancelled;
+
     return true;
   });
 
+  /* ================= CANCEL BOOKING ================= */
   const handleCancel = async (bookingId) => {
-    if (!window.confirm("Cancel this booking?")) return;
+    if (!window.confirm("Are you sure you want to cancel this booking?")) return;
 
     try {
-      await fetch(`${API_URL}/bookings/${bookingId}/cancel`, {
+      const res = await fetch(`${API_URL}/bookings/${bookingId}/status`, {
         method: "PATCH",
-        headers: { Authorization: `Bearer ${token}` },
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ status: "cancelled" }),
       });
+
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.message || "Failed to cancel booking");
 
       setBookings((prev) =>
         prev.map((b) =>
-          b._id === bookingId ? { ...b, status: "Cancelled" } : b
+          b._id === bookingId ? { ...b, status: "cancelled" } : b
         )
       );
     } catch (err) {
-      alert("Failed to cancel booking");
+      console.error("Cancel booking error:", err);
+      alert("Failed to cancel booking: " + err.message);
     }
   };
 
+  /* ================= RESCHEDULE ================= */
   const openReschedule = (booking) => {
+    const bookingDate = new Date(booking.scheduledAt);
     setRescheduleBooking(booking);
-    setRescheduleData({ date: booking.date, time: booking.time });
+    setRescheduleData({
+      date: bookingDate.toISOString().split("T")[0],
+      time: bookingDate.toTimeString().slice(0, 5),
+    });
   };
 
   const submitReschedule = async () => {
     if (!rescheduleData.date || !rescheduleData.time) {
-      alert("Select both date and time");
+      alert("Please select both date and time");
       return;
     }
 
     try {
+      const scheduledAt = new Date(`${rescheduleData.date}T${rescheduleData.time}`);
       const res = await fetch(
-        `${API_URL}/bookings/${rescheduleBooking._id}/reschedule`,
+        `${API_URL}/bookings/${rescheduleBooking._id}/reschedule`, // ✅ correct endpoint
         {
           method: "PATCH",
           headers: {
             Authorization: `Bearer ${token}`,
             "Content-Type": "application/json",
           },
-          body: JSON.stringify(rescheduleData),
+          body: JSON.stringify({ scheduledAt }),
         }
       );
 
-      if (!res.ok) throw new Error("Reschedule failed");
-      const updated = await res.json();
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.message || "Reschedule failed");
 
       setBookings((prev) =>
-        prev.map((b) => (b._id === updated._id ? updated : b))
+        prev.map((b) => (b._id === rescheduleBooking._id ? data.booking : b))
       );
       setRescheduleBooking(null);
-      alert("Booking rescheduled");
+      alert("Booking rescheduled successfully!");
     } catch (err) {
-      console.error(err);
-      alert("Failed to reschedule");
+      console.error("Reschedule error:", err);
+      alert("Failed to reschedule booking: " + err.message);
     }
   };
 
+  /* ================= LOADING ================= */
   if (loading) {
     return (
-      <div className="flex justify-center items-center h-64 font-medium" style={{ color: "#0ea5e9" }}>
+      <div className="flex justify-center items-center h-64 font-medium text-sky-500">
         Loading bookings…
       </div>
     );
   }
 
+  /* ================= RENDER ================= */
   return (
     <div className="space-y-6">
-      {/* Header */}
-      <div className="border rounded-lg p-6" style={{ backgroundColor: "#e0f2fe", borderColor: "#0ea5e9" }}>
-        <h1 className="text-2xl font-bold" style={{ color: "#0ea5e9" }}>Your Bookings</h1>
-        <p className="mt-1" style={{ color: "#0ea5e9" }}>Manage your bookings here</p>
+      {/* HEADER */}
+      <div className="border rounded-lg p-6 bg-sky-100 border-sky-500">
+        <h1 className="text-2xl font-bold text-sky-600">Your Bookings</h1>
+        <p className="mt-1 text-sky-600">Manage all your bookings here</p>
       </div>
 
-      {/* Filters */}
+      {/* FILTERS */}
       <div className="flex gap-3 flex-wrap">
         {FILTERS.map((f) => (
           <button
             key={f}
             onClick={() => setFilter(f)}
-            className="px-4 py-2 rounded-md border transition"
-            style={
+            className={`px-4 py-2 rounded-md border transition ${
               filter === f
-                ? { backgroundColor: "#0ea5e9", color: "#ffffff", borderColor: "#0ea5e9" }
-                : { backgroundColor: "#ffffff", color: "#0ea5e9", borderColor: "#0ea5e9" }
-            }
+                ? "bg-sky-500 text-white border-sky-500"
+                : "bg-white text-sky-500 border-sky-500"
+            }`}
           >
             {f}
           </button>
         ))}
       </div>
 
-      {/* Bookings */}
+      {/* BOOKINGS LIST */}
       {filteredBookings.length === 0 ? (
         <div className="bg-white border rounded-lg py-16 text-center text-gray-500">
           No bookings found.
@@ -152,20 +178,21 @@ export default function CustomerBookings() {
       ) : (
         <div className="grid gap-4">
           {filteredBookings.map((b) => {
-            const isUpcoming = ["Scheduled", "Pending"].includes(b.status);
+            const bookingDate = new Date(b.scheduledAt);
+            const isUpcoming =
+              ["pending", "accepted", "in_progress"].includes(b.status) &&
+              bookingDate > new Date();
 
             return (
               <div
                 key={b._id}
-                className="bg-white border rounded-lg p-5 hover:shadow-md transition"
-                style={{ borderColor: "#0ea5e933" }}
+                className="bg-white border rounded-lg p-5 hover:shadow-md transition relative"
               >
-                {/* TOP */}
                 <div className="flex justify-between items-start gap-4 flex-wrap">
                   <div>
-                    <h3 className="font-semibold text-lg">{b.service}</h3>
-                    <p className="flex items-center gap-2 mt-1" style={{ color: "#0ea5e9" }}>
-                      <FaUser /> {b.providerName}
+                    <h3 className="font-semibold text-lg">{b.serviceName || b.service?.name}</h3>
+                    <p className="flex items-center gap-2 mt-1 text-sky-500">
+                      <FaUser /> {b.provider?.basicInfo?.providerName || b.providerName}
                     </p>
                   </div>
 
@@ -175,8 +202,7 @@ export default function CustomerBookings() {
                   {/* Info drawer trigger */}
                   <button
                     onClick={() => setSelectedBooking(b)}
-                    style={{ color: "#0ea5e9" }}
-                    className="absolute top-3 right-3 hover:opacity-80"
+                    className="absolute top-3 right-3 text-sky-500 hover:opacity-80"
                   >
                     <FaInfoCircle />
                   </button>
@@ -184,23 +210,20 @@ export default function CustomerBookings() {
 
                 {/* META */}
                 <div className="flex gap-6 mt-4 text-sm text-gray-600">
-                  <span className="flex items-center gap-2" style={{ color: "#0ea5e9" }}>
-                    <FaCalendarAlt /> {b.date}
+                  <span className="flex items-center gap-2 text-sky-500">
+                    <FaCalendarAlt /> {bookingDate.toLocaleDateString()}
                   </span>
-                  <span className="flex items-center gap-2" style={{ color: "#0ea5e9" }}>
-                    <FaClock /> {b.time}
+                  <span className="flex items-center gap-2 text-sky-500">
+                    <FaClock /> {bookingDate.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
                   </span>
                 </div>
 
-                {/* Actions */}
+                {/* ACTIONS */}
                 {isUpcoming && (
                   <div className="flex gap-3 mt-5">
                     <button
                       onClick={() => openReschedule(b)}
-                      className="flex items-center gap-2 px-4 py-2 rounded-md border transition"
-                      style={{ borderColor: "#0ea5e9", color: "#0ea5e9" }}
-                      onMouseOver={(e) => (e.currentTarget.style.backgroundColor = "#e0f2fe")}
-                      onMouseOut={(e) => (e.currentTarget.style.backgroundColor = "transparent")}
+                      className="flex items-center gap-2 px-4 py-2 rounded-md border border-sky-500 text-sky-500 hover:bg-sky-100 transition"
                     >
                       <FaRedo /> Reschedule
                     </button>
@@ -218,7 +241,7 @@ export default function CustomerBookings() {
         </div>
       )}
 
-      {/* Reschedule Modal */}
+      {/* RESCHEDULE MODAL */}
       {rescheduleBooking && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
           <div className="bg-white rounded-lg p-6 w-96 relative shadow-lg">
@@ -228,8 +251,8 @@ export default function CustomerBookings() {
             >
               <FaTimes />
             </button>
-            <h2 className="text-xl font-bold mb-4" style={{ color: "#0ea5e9" }}>
-              Reschedule {rescheduleBooking.service}
+            <h2 className="text-xl font-bold mb-4 text-sky-500">
+              Reschedule {rescheduleBooking.serviceName || rescheduleBooking.service?.name}
             </h2>
             <input
               type="date"
@@ -237,7 +260,7 @@ export default function CustomerBookings() {
               onChange={(e) =>
                 setRescheduleData({ ...rescheduleData, date: e.target.value })
               }
-              className="input mb-3 w-full"
+              className="border p-2 rounded w-full mb-3"
             />
             <input
               type="time"
@@ -245,13 +268,10 @@ export default function CustomerBookings() {
               onChange={(e) =>
                 setRescheduleData({ ...rescheduleData, time: e.target.value })
               }
-              className="input mb-4 w-full"
+              className="border p-2 rounded w-full mb-4"
             />
             <button
-              className="w-full py-2 rounded-md text-white"
-              style={{ backgroundColor: "#0ea5e9" }}
-              onMouseOver={(e) => (e.currentTarget.style.backgroundColor = "#0284c7")}
-              onMouseOut={(e) => (e.currentTarget.style.backgroundColor = "#0ea5e9")}
+              className="w-full py-2 rounded-md text-white bg-sky-500 hover:bg-sky-600 transition"
               onClick={submitReschedule}
             >
               Confirm
@@ -260,7 +280,7 @@ export default function CustomerBookings() {
         </div>
       )}
 
-      {/* Booking Details Drawer */}
+      {/* BOOKING DETAILS DRAWER */}
       {selectedBooking && (
         <div className="fixed inset-0 z-40 flex">
           <div
@@ -274,23 +294,27 @@ export default function CustomerBookings() {
             >
               <FaTimes />
             </button>
-            <h2 className="text-xl font-bold mb-4" style={{ color: "#0ea5e9" }}>
-              {selectedBooking.service}
+            <h2 className="text-xl font-bold mb-4 text-sky-500">
+              {selectedBooking.serviceName || selectedBooking.service?.name}
             </h2>
             <p className="text-gray-600 mb-1">
-              <strong>Provider:</strong> {selectedBooking.providerName}
+              <strong>Provider:</strong>{" "}
+              {selectedBooking.provider?.basicInfo?.providerName || selectedBooking.providerName}
             </p>
             <p className="text-gray-600 mb-1">
-              <strong>Date:</strong> {selectedBooking.date}
+              <strong>Date:</strong> {new Date(selectedBooking.scheduledAt).toLocaleDateString()}
             </p>
             <p className="text-gray-600 mb-1">
-              <strong>Time:</strong> {selectedBooking.time}
+              <strong>Time:</strong> {new Date(selectedBooking.scheduledAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
             </p>
             <p className="text-gray-600 mb-1">
               <strong>Status:</strong> {selectedBooking.status}
             </p>
             <p className="text-gray-600 mb-1">
               <strong>Notes:</strong> {selectedBooking.notes || "N/A"}
+            </p>
+            <p className="text-gray-600 mb-1">
+              <strong>Price:</strong> ${selectedBooking.price?.toFixed(2) || "N/A"}
             </p>
           </div>
         </div>
@@ -302,16 +326,17 @@ export default function CustomerBookings() {
 /* ---------------- STATUS BADGES ---------------- */
 const StatusBadge = ({ status }) => {
   const styles = {
-    Scheduled: "bg-[#e0f2fe] text-[#0ea5e9] border-[#0ea5e9] animate-pulse",
-    Pending: "bg-[#e0f2fe] text-[#0ea5e9] border-[#0ea5e9] animate-pulse",
-    Completed: "bg-green-100 text-green-700 border-green-500 animate-fadeIn",
-    Cancelled: "bg-red-100 text-red-600 border-red-500 animate-shake",
+    pending: "bg-sky-100 text-sky-700 border border-sky-400 animate-pulse",
+    accepted: "bg-sky-200 text-sky-800 border border-sky-500 animate-pulse",
+    in_progress: "bg-blue-100 text-blue-700 border border-blue-500 animate-pulse",
+    completed: "bg-green-100 text-green-700 border border-green-400",
+    cancelled: "bg-red-100 text-red-600 border border-red-400",
   };
 
   return (
     <span
       className={`px-3 py-1 rounded-full border text-sm font-medium ${
-        styles[status] || ""
+        styles[status?.toLowerCase()] || "bg-gray-100 text-gray-700 border-gray-300"
       }`}
     >
       {status}

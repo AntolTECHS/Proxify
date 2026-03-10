@@ -14,6 +14,7 @@ import serviceRoutes from "./routes/serviceRoutes.js";
 import bookingRoutes from "./routes/bookingRoutes.js";
 import searchProxy from "./routes/searchProxy.js";
 
+
 dotenv.config();
 await connectDB();
 

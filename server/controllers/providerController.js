@@ -1,4 +1,3 @@
-// server/controllers/providerController.js
 import asyncHandler from "express-async-handler";
 import Provider from "../models/Provider.js";
 import User from "../models/User.js";
@@ -23,7 +22,6 @@ export const upgradeToProvider = asyncHandler(async (req, res) => {
   // ---------- Parse JSON fields safely ----------
   let basicInfo = {};
   let services = [];
-  let availability = {};
 
   try {
     basicInfo =
@@ -34,18 +32,11 @@ export const upgradeToProvider = asyncHandler(async (req, res) => {
       typeof req.body.services === "string"
         ? JSON.parse(req.body.services)
         : req.body.services || [];
-    availability =
-      typeof req.body.availability === "string"
-        ? JSON.parse(req.body.availability)
-        : req.body.availability || {};
   } catch (err) {
     return res
       .status(400)
       .json({ success: false, message: "Invalid JSON format in request" });
   }
-
-  const servicesDescription = req.body.servicesDescription || "";
-  const documentsText = req.body.documentsText || "";
 
   // ---------- Validate required basic info ----------
   if (!basicInfo.providerName || !basicInfo.email) {
@@ -55,10 +46,22 @@ export const upgradeToProvider = asyncHandler(async (req, res) => {
     });
   }
 
-  // ---------- Handle uploaded files ----------
+  // ---------- Validate services ----------
+  if (!Array.isArray(services) || services.length === 0) {
+    return res.status(400).json({
+      success: false,
+      message: "At least one service with name and price is required",
+    });
+  }
+
+  services = services.map((s) => ({
+    name: s.name,
+    price: Number(s.price) || 0,
+  }));
+
+  // ---------- Handle uploaded documents ----------
   const documents = (req.files || []).map((file) => ({
     name: file.originalname,
-    filename: file.filename,
     path: `/uploads/${file.filename}`,
     size: file.size,
     type: file.mimetype,
@@ -69,11 +72,11 @@ export const upgradeToProvider = asyncHandler(async (req, res) => {
     user: userId,
     basicInfo,
     services,
-    servicesDescription,
-    availability,
     documents,
-    documentsText,
-    status: "under_review",
+    status: "approved", // Or "under_review" depending on workflow
+    availabilityStatus: "Offline",
+    rating: 0,
+    reviewCount: 0,
   });
 
   // ---------- Upgrade user role ----------
@@ -111,4 +114,22 @@ export const getProviderProfile = asyncHandler(async (req, res) => {
     success: true,
     provider,
   });
+});
+
+/**
+ * @desc    Get all providers with approved badge
+ * @route   GET /api/providers
+ * @access  Public
+ */
+export const getAllProviders = asyncHandler(async (req, res) => {
+  const providers = await Provider.find()
+    .populate("user", "-password")
+    .lean(); // lean for plain JS object to add computed fields
+
+  const providersWithBadge = providers.map((p) => ({
+    ...p,
+    approvedBadge: p.status === "approved" ? "Approved" : "Not Approved",
+  }));
+
+  res.status(200).json(providersWithBadge);
 });
