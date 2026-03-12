@@ -1,3 +1,4 @@
+
 // src/pages/Customer/CustomerDashboard.jsx
 import { useState, useEffect, useMemo } from "react";
 import {
@@ -28,6 +29,8 @@ const [serviceFilter,setServiceFilter] = useState("");
 
 const [selectedProvider,setSelectedProvider] = useState(null);
 const [bookingProvider,setBookingProvider] = useState(null);
+
+const [selectedService,setSelectedService] = useState("");
 
 const [notification,setNotification] = useState(null);
 
@@ -127,7 +130,15 @@ return matchesSearch && matchesService;
 
 const submitBooking = async()=>{
 
-if(!quickBooking.date || !quickBooking.time || !quickBooking.location) return;
+if(!quickBooking.date || !quickBooking.time || !quickBooking.location){
+alert("Please fill booking details");
+return;
+}
+
+if(!selectedService){
+alert("Please select a service");
+return;
+}
 
 try{
 
@@ -145,7 +156,7 @@ Authorization:`Bearer ${token}`,
 body:JSON.stringify({
 
 providerId:bookingProvider._id,
-serviceId:bookingProvider.services?.[0]?._id,
+serviceId:selectedService,
 scheduledAt,
 location:quickBooking.location,
 notes:quickBooking.notes
@@ -170,6 +181,8 @@ time:"",
 location:"",
 notes:""
 });
+
+setSelectedService("");
 
 setTimeout(()=>setNotification(null),4000);
 
@@ -377,6 +390,7 @@ Services: {selectedProvider.services?.map(s=>s.name).join(", ")}
 onClick={()=>{
 setBookingProvider(selectedProvider);
 setSelectedProvider(null);
+setSelectedService("");
 }}
 className="bg-sky-500 text-white w-full py-2 rounded-lg mt-4"
 >
@@ -407,6 +421,21 @@ onClick={()=>setBookingProvider(null)}
 <h2 className="text-xl font-bold text-sky-500 mb-4">
 Book {bookingProvider.basicInfo?.providerName}
 </h2>
+
+<select
+className="border p-2 rounded w-full mb-3"
+value={selectedService}
+onChange={e=>setSelectedService(e.target.value)}
+>
+<option value="">Select Service</option>
+
+{bookingProvider.services?.map(service=>(
+<option key={service._id} value={service._id}>
+{service.name} - ${service.price}
+</option>
+))}
+
+</select>
 
 <input
 type="date"

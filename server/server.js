@@ -1,5 +1,12 @@
-import express from "express";
+
 import dotenv from "dotenv";
+
+/* ======================
+   Load Environment Variables FIRST
+====================== */
+dotenv.config();
+
+import express from "express";
 import cors from "cors";
 import morgan from "morgan";
 import path from "path";
@@ -7,21 +14,15 @@ import { fileURLToPath } from "url";
 
 import connectDB from "./config/db.js";
 
-// Routes
-import authRoutes from "./routes/authRoutes.js";
-import providerRoutes from "./routes/providerRoutes.js";
-import serviceRoutes from "./routes/serviceRoutes.js";
-import bookingRoutes from "./routes/bookingRoutes.js";
-import searchProxy from "./routes/searchProxy.js";
-
-
-dotenv.config();
+/* ======================
+   Connect Database
+====================== */
 await connectDB();
 
 const app = express();
 
 /* ======================
-   __dirname fix
+   __dirname Fix (ESM)
 ====================== */
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -44,12 +45,21 @@ if (process.env.NODE_ENV === "development") {
 }
 
 /* ======================
-   Static
+   Static Files
 ====================== */
 app.use("/uploads", express.static(path.join(__dirname, "uploads")));
 
 /* ======================
-   Routes
+   Import Routes AFTER dotenv
+====================== */
+const authRoutes = (await import("./routes/authRoutes.js")).default;
+const providerRoutes = (await import("./routes/providerRoutes.js")).default;
+const serviceRoutes = (await import("./routes/serviceRoutes.js")).default;
+const bookingRoutes = (await import("./routes/bookingRoutes.js")).default;
+const searchProxy = (await import("./routes/searchProxy.js")).default;
+
+/* ======================
+   API Routes
 ====================== */
 app.use("/api/auth", authRoutes);
 app.use("/api/providers", providerRoutes);
@@ -68,7 +78,7 @@ app.get("/", (req, res) => {
 });
 
 /* ======================
-   404
+   404 Handler
 ====================== */
 app.use((req, res) => {
   res.status(404).json({
@@ -78,7 +88,7 @@ app.use((req, res) => {
 });
 
 /* ======================
-   Error Handler
+   Global Error Handler
 ====================== */
 app.use((err, req, res, next) => {
   console.error("🔥 ERROR:", err);
@@ -90,9 +100,11 @@ app.use((err, req, res, next) => {
 });
 
 /* ======================
-   Start
+   Start Server
 ====================== */
 const PORT = process.env.PORT || 5000;
+
 app.listen(PORT, () => {
   console.log(`✅ Server running on port ${PORT}`);
 });
+
