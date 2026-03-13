@@ -1,3 +1,4 @@
+
 // server/routes/bookingRoutes.js
 import express from "express";
 import Booking from "../models/Booking.js";
@@ -34,8 +35,12 @@ router.post("/", protect(), async (req, res) => {
       scheduledAt: new Date(scheduledAt),
       status: { $in: ["pending", "accepted", "in_progress"] },
     });
+
     if (conflict)
-      return res.status(400).json({ success: false, message: "Provider already has a booking at this time" });
+      return res.status(400).json({
+        success: false,
+        message: "Provider already has a booking at this time",
+      });
 
     const booking = await Booking.create({
       customer: req.user._id,
@@ -82,10 +87,37 @@ router.get("/", protect(), async (req, res) => {
   }
 });
 
-/* -------------------- GET BOOKINGS BY PROVIDER -------------------- */
+/* -------------------- GET BOOKINGS FOR LOGGED-IN PROVIDER -------------------- */
+router.get("/provider", protect(), async (req, res) => {
+  try {
+    const provider = await Provider.findOne({ user: req.user._id });
+
+    if (!provider)
+      return res.status(404).json({
+        success: false,
+        message: "Provider profile not found",
+      });
+
+    const bookings = await Booking.find({ provider: provider._id })
+      .populate("customer", "-password")
+      .populate("provider", "basicInfo")
+      .lean();
+
+    res.json({
+      success: true,
+      bookings,
+    });
+  } catch (err) {
+    console.error("GET PROVIDER BOOKINGS ERROR:", err);
+    res.status(500).json({ success: false, message: err.message });
+  }
+});
+
+/* -------------------- GET BOOKINGS BY PROVIDER ID -------------------- */
 router.get("/provider/:providerId", protect(), async (req, res) => {
   try {
     const { providerId } = req.params;
+
     if (!mongoose.Types.ObjectId.isValid(providerId))
       return res.status(400).json({ success: false, message: "Invalid providerId" });
 
@@ -104,12 +136,17 @@ router.get("/provider/:providerId", protect(), async (req, res) => {
 router.patch("/:id/status", protect(), async (req, res) => {
   try {
     const { status } = req.body;
-    if (!status) return res.status(400).json({ success: false, message: "Status is required" });
+
+    if (!status)
+      return res.status(400).json({ success: false, message: "Status is required" });
 
     const booking = await Booking.findById(req.params.id);
-    if (!booking) return res.status(404).json({ success: false, message: "Booking not found" });
+
+    if (!booking)
+      return res.status(404).json({ success: false, message: "Booking not found" });
 
     booking.status = status;
+
     await booking.save();
 
     res.json({ success: true, booking });
@@ -123,24 +160,35 @@ router.patch("/:id/status", protect(), async (req, res) => {
 router.patch("/:id/reschedule", protect(), async (req, res) => {
   try {
     const { scheduledAt } = req.body;
-    if (!scheduledAt) return res.status(400).json({ success: false, message: "scheduledAt is required" });
+
+    if (!scheduledAt)
+      return res.status(400).json({
+        success: false,
+        message: "scheduledAt is required",
+      });
 
     const booking = await Booking.findById(req.params.id);
-    if (!booking) return res.status(404).json({ success: false, message: "Booking not found" });
+
+    if (!booking)
+      return res.status(404).json({ success: false, message: "Booking not found" });
 
     const newDate = new Date(scheduledAt);
 
-    // Prevent double booking for the same provider at new time
     const conflict = await Booking.findOne({
       provider: booking.provider,
       scheduledAt: newDate,
       status: { $in: ["pending", "accepted", "in_progress"] },
-      _id: { $ne: booking._id }, // exclude current booking
+      _id: { $ne: booking._id },
     });
+
     if (conflict)
-      return res.status(400).json({ success: false, message: "Provider already has a booking at this time" });
+      return res.status(400).json({
+        success: false,
+        message: "Provider already has a booking at this time",
+      });
 
     booking.scheduledAt = newDate;
+
     await booking.save();
 
     res.json({ success: true, booking });
