@@ -12,6 +12,7 @@
   "dependencies": {
     "@emotion/react": "^11.14.0",
     "@emotion/styled": "^11.14.1",
+    "@mapbox/mapbox-sdk": "^0.16.2",
     "@mui/material": "^7.3.6",
     "@react-google-maps/api": "^2.20.7",
     "@reduxjs/toolkit": "^2.11.2",

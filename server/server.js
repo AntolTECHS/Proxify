@@ -1,4 +1,3 @@
-
 import dotenv from "dotenv";
 
 /* ======================
@@ -50,13 +49,17 @@ if (process.env.NODE_ENV === "development") {
 app.use("/uploads", express.static(path.join(__dirname, "uploads")));
 
 /* ======================
-   Import Routes AFTER dotenv
+   Import Routes (Dynamic ESM)
 ====================== */
 const authRoutes = (await import("./routes/authRoutes.js")).default;
 const providerRoutes = (await import("./routes/providerRoutes.js")).default;
 const serviceRoutes = (await import("./routes/serviceRoutes.js")).default;
 const bookingRoutes = (await import("./routes/bookingRoutes.js")).default;
+const communityRoutes = (await import("./routes/communityRoutes.js")).default;
 const searchProxy = (await import("./routes/searchProxy.js")).default;
+
+/* ✅ NEW: Review Routes */
+const reviewRoutes = (await import("./routes/reviewRoutes.js")).default;
 
 /* ======================
    API Routes
@@ -65,6 +68,8 @@ app.use("/api/auth", authRoutes);
 app.use("/api/providers", providerRoutes);
 app.use("/api/services", serviceRoutes);
 app.use("/api/bookings", bookingRoutes);
+app.use("/api/reviews", reviewRoutes); // ✅ IMPORTANT
+app.use("/api/community", communityRoutes);
 app.use("/api", searchProxy);
 
 /* ======================
@@ -107,4 +112,3 @@ const PORT = process.env.PORT || 5000;
 app.listen(PORT, () => {
   console.log(`✅ Server running on port ${PORT}`);
 });
-
