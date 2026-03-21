@@ -11,6 +11,7 @@ import {
   FaBell
 } from "react-icons/fa";
 import { useAuth } from "../../context/AuthContext.jsx";
+import Chat from "../../components/Chat/Chat.jsx"; // Chat integration
 
 const API_URL = import.meta.env.VITE_API_URL || "http://localhost:5000/api";
 
@@ -40,6 +41,8 @@ export default function CustomerDashboard() {
 
   const [reviewBooking, setReviewBooking] = useState(null);
   const [reviewData, setReviewData] = useState({ rating: 0, comment: "" });
+
+  const [chatBookingId, setChatBookingId] = useState(null);
 
   /* ---------------------- HELPERS ---------------------- */
   const handleUnauthorized = () => {
@@ -196,12 +199,10 @@ export default function CustomerDashboard() {
       const data = await res.json();
       if (!res.ok) throw new Error(data.message);
 
-      // Update booking as reviewed
       setBookings((prev) =>
         prev.map((b) => (b._id === reviewBooking._id ? { ...b, reviewed: true } : b))
       );
 
-      // Refresh reviews for this provider
       if (selectedProvider?._id === providerId) {
         const refreshed = await fetch(`${API_URL}/reviews/${providerId}`);
         if (refreshed.status === 401) return handleUnauthorized();
@@ -267,13 +268,21 @@ export default function CustomerDashboard() {
                 <div className="mt-2">
                   <StatusBadge status={b.status} />
                 </div>
-                <div className="mt-3">
+                <div className="mt-3 flex flex-col gap-1">
                   {b.status === "completed" && !b.reviewed && (
                     <button
                       onClick={() => openReviewModal(b)}
                       className="text-sm text-sky-600 underline"
                     >
                       Leave Review
+                    </button>
+                  )}
+                  {b.status !== "cancelled" && (
+                    <button
+                      onClick={() => setChatBookingId(b._id)}
+                      className="text-sm text-sky-600 underline"
+                    >
+                      Chat
                     </button>
                   )}
                   {b.reviewed && (
@@ -367,6 +376,13 @@ export default function CustomerDashboard() {
           setReviewBooking={setReviewBooking}
         />
       )}
+
+      {/* ---------------- CHAT MODAL ---------------- */}
+      {chatBookingId && (
+        <Modal onClose={() => setChatBookingId(null)}>
+          <Chat bookingId={chatBookingId} token={token} userId={user.id} />
+        </Modal>
+      )}
     </div>
   );
 }
@@ -392,7 +408,12 @@ const Section = ({ title, children }) => (
 const Empty = ({ text }) => <p className="text-center text-gray-500 py-6">{text}</p>;
 
 const StatusBadge = ({ status }) => {
-  const styles = { pending: "bg-yellow-100 text-yellow-700", accepted: "bg-blue-100 text-blue-700", completed: "bg-green-100 text-green-700", cancelled: "bg-red-100 text-red-700" };
+  const styles = {
+    pending: "bg-yellow-100 text-yellow-700",
+    accepted: "bg-blue-100 text-blue-700",
+    completed: "bg-green-100 text-green-700",
+    cancelled: "bg-red-100 text-red-700"
+  };
   return <span className={`px-3 py-1 rounded-full text-sm ${styles[status] || "bg-gray-100 text-gray-700"}`}>{status}</span>;
 };
 
@@ -406,7 +427,6 @@ const StarRating = ({ rating = 0 }) => {
   return <div className="flex gap-1 justify-center">{stars}</div>;
 };
 
-/* ---------------- MODAL WRAPPER ---------------- */
 const Modal = ({ children, onClose }) => (
   <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
     <div className="bg-white rounded-xl p-6 w-[400px] relative max-h-[85vh] overflow-y-auto">
@@ -416,7 +436,6 @@ const Modal = ({ children, onClose }) => (
   </div>
 );
 
-/* ---------------- PROVIDER MODAL ---------------- */
 const ProviderModal = ({ selectedProvider, setSelectedProvider, providerReviews, reviewsLoading, setBookingProvider, setSelectedService }) => (
   <Modal onClose={() => setSelectedProvider(null)}>
     <div className="flex justify-center mb-3">
@@ -432,55 +451,50 @@ const ProviderModal = ({ selectedProvider, setSelectedProvider, providerReviews,
       {reviewsLoading ? <p className="text-sm text-gray-500">Loading reviews...</p> :
         providerReviews.length === 0 ? <p className="text-sm text-gray-500">No reviews yet.</p> :
         providerReviews.map(r => (
-          <div key={r._id} className="border rounded-lg p-3 bg-gray-50 mb-2">
+          <div key={r._id} className="border rounded-lg p-2 mb-2">
             <div className="flex justify-between items-center">
-              <p className="font-medium text-sm">{r.customer?.name || "Customer"}</p>
-              <span className="text-xs text-gray-500">{new Date(r.createdAt).toLocaleDateString()}</span>
+              <p className="text-sm font-semibold">{r.userName}</p>
+              <StarRating rating={r.rating} />
             </div>
-            <StarRating rating={r.rating} />
-            <p className="text-sm text-gray-600 mt-1">{r.comment}</p>
+            <p className="text-sm text-gray-500">{r.comment}</p>
           </div>
-        ))
-      }
+        ))}
     </div>
   </Modal>
 );
 
-/* ---------------- BOOKING MODAL ---------------- */
 const BookingModal = ({ bookingProvider, quickBooking, setQuickBooking, selectedService, setSelectedService, submitBooking, setBookingProvider }) => (
   <Modal onClose={() => setBookingProvider(null)}>
     <h2 className="text-xl font-bold text-sky-500 mb-4">Book {bookingProvider.basicInfo?.providerName}</h2>
-    <label className="block mb-2">Service:</label>
-    <select className="border px-3 py-2 rounded-lg w-full mb-3" value={selectedService} onChange={(e) => setSelectedService(e.target.value)}>
+    <input type="date" className="border w-full px-3 py-2 mb-2 rounded" value={quickBooking.date} onChange={e => setQuickBooking(prev => ({ ...prev, date: e.target.value }))} />
+    <input type="time" className="border w-full px-3 py-2 mb-2 rounded" value={quickBooking.time} onChange={e => setQuickBooking(prev => ({ ...prev, time: e.target.value }))} />
+    <input type="text" placeholder="Location" className="border w-full px-3 py-2 mb-2 rounded" value={quickBooking.location} onChange={e => setQuickBooking(prev => ({ ...prev, location: e.target.value }))} />
+    <textarea placeholder="Notes" className="border w-full px-3 py-2 mb-2 rounded" value={quickBooking.notes} onChange={e => setQuickBooking(prev => ({ ...prev, notes: e.target.value }))} />
+    <select className="border w-full px-3 py-2 mb-2 rounded" value={selectedService} onChange={e => setSelectedService(e.target.value)}>
       <option value="">Select Service</option>
-      {bookingProvider.services?.map(s => <option key={s._id} value={s._id}>{s.name} (${s.price})</option>)}
+      {bookingProvider.services?.map(s => <option key={s._id} value={s._id}>{s.name} - ${s.price}</option>)}
     </select>
-    <label className="block mb-2">Date:</label>
-    <input type="date" className="border px-3 py-2 rounded-lg w-full mb-3" value={quickBooking.date} onChange={(e) => setQuickBooking({...quickBooking, date: e.target.value})} />
-    <label className="block mb-2">Time:</label>
-    <input type="time" className="border px-3 py-2 rounded-lg w-full mb-3" value={quickBooking.time} onChange={(e) => setQuickBooking({...quickBooking, time: e.target.value})} />
-    <label className="block mb-2">Location:</label>
-    <input type="text" className="border px-3 py-2 rounded-lg w-full mb-3" value={quickBooking.location} onChange={(e) => setQuickBooking({...quickBooking, location: e.target.value})} />
-    <label className="block mb-2">Notes:</label>
-    <textarea className="border px-3 py-2 rounded-lg w-full mb-3" value={quickBooking.notes} onChange={(e) => setQuickBooking({...quickBooking, notes: e.target.value})} />
-    <button className="bg-sky-500 text-white w-full py-2 rounded-lg" onClick={submitBooking}>Confirm Booking</button>
+    <button className="bg-sky-500 text-white w-full py-2 rounded" onClick={submitBooking}>Confirm Booking</button>
   </Modal>
 );
 
-/* ---------------- REVIEW MODAL ---------------- */
 const ReviewModal = ({ reviewBooking, reviewData, setReviewData, submitReview, setReviewBooking }) => (
   <Modal onClose={() => setReviewBooking(null)}>
-    <h2 className="text-xl font-bold text-sky-500 mb-4">Review {reviewBooking.provider?.basicInfo?.providerName || "Provider"}</h2>
-    <label className="block mb-2">Rating:</label>
-    <div className="flex gap-1 mb-3">
-      {[1,2,3,4,5].map(n => (
-        <span key={n} onClick={() => setReviewData({...reviewData, rating: n})} className="cursor-pointer">
-          {reviewData.rating >= n ? <FaStar className="text-yellow-400"/> : <FaRegStar className="text-gray-300"/>}
-        </span>
-      ))}
-    </div>
-    <label className="block mb-2">Comment:</label>
-    <textarea className="border px-3 py-2 rounded-lg w-full mb-3" value={reviewData.comment} onChange={(e) => setReviewData({...reviewData, comment: e.target.value})} />
-    <button className="bg-sky-500 text-white w-full py-2 rounded-lg" onClick={submitReview}>Submit Review</button>
+    <h2 className="text-xl font-bold text-sky-500 mb-4">Review {reviewBooking.serviceName}</h2>
+    <StarRatingSelector rating={reviewData.rating} setRating={r => setReviewData(prev => ({ ...prev, rating: r }))} />
+    <textarea placeholder="Comment" className="border w-full px-3 py-2 mb-2 rounded" value={reviewData.comment} onChange={e => setReviewData(prev => ({ ...prev, comment: e.target.value }))} />
+    <button className="bg-sky-500 text-white w-full py-2 rounded" onClick={submitReview}>Submit Review</button>
   </Modal>
 );
+
+const StarRatingSelector = ({ rating, setRating }) => {
+  const stars = [];
+  for (let i = 1; i <= 5; i++) {
+    stars.push(
+      <span key={i} onClick={() => setRating(i)}>
+        {i <= rating ? <FaStar className="text-yellow-400 inline" /> : <FaRegStar className="text-gray-300 inline" />}
+      </span>
+    );
+  }
+  return <div className="flex gap-1 justify-center mb-2 cursor-pointer">{stars}</div>;
+};

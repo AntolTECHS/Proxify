@@ -10,6 +10,7 @@ import cors from "cors";
 import morgan from "morgan";
 import path from "path";
 import { fileURLToPath } from "url";
+import http from "http";
 
 import connectDB from "./config/db.js";
 
@@ -49,7 +50,7 @@ if (process.env.NODE_ENV === "development") {
 app.use("/uploads", express.static(path.join(__dirname, "uploads")));
 
 /* ======================
-   Import Routes (Dynamic ESM)
+   Import Routes
 ====================== */
 const authRoutes = (await import("./routes/authRoutes.js")).default;
 const providerRoutes = (await import("./routes/providerRoutes.js")).default;
@@ -57,9 +58,8 @@ const serviceRoutes = (await import("./routes/serviceRoutes.js")).default;
 const bookingRoutes = (await import("./routes/bookingRoutes.js")).default;
 const communityRoutes = (await import("./routes/communityRoutes.js")).default;
 const searchProxy = (await import("./routes/searchProxy.js")).default;
-
-/* ✅ NEW: Review Routes */
 const reviewRoutes = (await import("./routes/reviewRoutes.js")).default;
+const chatRoutes = (await import("./routes/chatRoutes.js")).default;
 
 /* ======================
    API Routes
@@ -68,8 +68,9 @@ app.use("/api/auth", authRoutes);
 app.use("/api/providers", providerRoutes);
 app.use("/api/services", serviceRoutes);
 app.use("/api/bookings", bookingRoutes);
-app.use("/api/reviews", reviewRoutes); // ✅ IMPORTANT
+app.use("/api/reviews", reviewRoutes);
 app.use("/api/community", communityRoutes);
+app.use("/api/chat", chatRoutes); // ✅ Chat REST API
 app.use("/api", searchProxy);
 
 /* ======================
@@ -105,10 +106,18 @@ app.use((err, req, res, next) => {
 });
 
 /* ======================
-   Start Server
+   Start Server with Socket.io
 ====================== */
+import { initSocket } from "./sockets/socket.js";
+
 const PORT = process.env.PORT || 5000;
 
-app.listen(PORT, () => {
+// Use native http server to attach socket.io
+const server = http.createServer(app);
+
+// Initialize Socket.io layer
+initSocket(server);
+
+server.listen(PORT, () => {
   console.log(`✅ Server running on port ${PORT}`);
 });
