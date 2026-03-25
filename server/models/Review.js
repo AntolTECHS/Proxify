@@ -1,4 +1,3 @@
-// models/Review.js
 import mongoose from "mongoose";
 
 /* ============================
@@ -15,79 +14,114 @@ const reviewSchema = new mongoose.Schema(
       type: mongoose.Schema.Types.ObjectId,
       ref: "Provider",
       required: [true, "Provider is required"],
-      index: true, // faster queries by provider
+      index: true,
     },
     booking: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "Booking",
       required: [true, "Booking is required"],
-      unique: true, // ensures one review per booking
+      unique: true, // one review per booking
     },
     rating: {
       type: Number,
-      min: [1, "Rating cannot be below 1"],
-      max: [5, "Rating cannot exceed 5"],
       required: [true, "Rating is required"],
+      min: 1,
+      max: 5,
     },
     comment: {
       type: String,
       trim: true,
-      maxlength: [500, "Comment cannot exceed 500 characters"],
+      maxlength: 500,
     },
   },
   {
     timestamps: true,
-    toJSON: { virtuals: true },
-    toObject: { virtuals: true },
   }
 );
 
 /* ============================
-   Middleware / Hooks
+   PRE SAVE (MODERN)
 ============================ */
-// Ensure rating stays within bounds
-reviewSchema.pre("save", function () {
+reviewSchema.pre("save", async function () {
+  // Clamp rating safely
   if (this.rating < 1) this.rating = 1;
   if (this.rating > 5) this.rating = 5;
 });
 
-// Automatically populate customer when fetching reviews
+/* ============================
+   AUTO POPULATE (FIXED)
+============================ */
 reviewSchema.pre(/^find/, function () {
-  this.populate({ path: "customer", select: "name email" });
+  // Always safe — no getOptions crash
+  this.populate({
+    path: "customer",
+    select: "name email",
+  });
 });
 
 /* ============================
-   Static Method: calculateProviderRating
-   Use this to recalc avg rating for a provider
+   STATIC: CALCULATE PROVIDER RATING
 ============================ */
 reviewSchema.statics.calculateProviderRating = async function (providerId) {
-  const stats = await this.aggregate([
-    { $match: { provider: mongoose.Types.ObjectId(providerId) } },
-    {
-      $group: {
-        _id: "$provider",
-        avgRating: { $avg: "$rating" },
-        totalReviews: { $sum: 1 },
-      },
-    },
-  ]);
+  try {
+    if (!mongoose.Types.ObjectId.isValid(providerId)) return;
 
-  if (stats.length > 0) {
+    const providerObjectId =
+      typeof providerId === "string"
+        ? new mongoose.Types.ObjectId(providerId)
+        : providerId;
+
+    const stats = await this.aggregate([
+      { $match: { provider: providerObjectId } },
+      {
+        $group: {
+          _id: "$provider",
+          avgRating: { $avg: "$rating" },
+          totalReviews: { $sum: 1 },
+        },
+      },
+    ]);
+
+    const rating = stats.length
+      ? Number(stats[0].avgRating.toFixed(1))
+      : 0;
+
+    const totalReviews = stats.length ? stats[0].totalReviews : 0;
+
     await mongoose.model("Provider").findByIdAndUpdate(providerId, {
-      rating: stats[0].avgRating.toFixed(1),
-      totalReviews: stats[0].totalReviews,
+      rating,
+      totalReviews,
     });
-  } else {
-    await mongoose.model("Provider").findByIdAndUpdate(providerId, {
-      rating: 0,
-      totalReviews: 0,
-    });
+  } catch (err) {
+    console.error("🔥 Rating calc error:", err.message);
   }
 };
 
 /* ============================
-   Indexes
+   POST HOOKS (SAFE RECALC)
 ============================ */
-reviewSchema.index({ provider: 1, rating: -1 }); // query reviews by provider with sorting
+
+// After create/update
+reviewSchema.post("save", async function () {
+  await this.constructor.calculateProviderRating(this.provider);
+});
+
+// After delete (findOneAndDelete)
+reviewSchema.post("findOneAndDelete", async function (doc) {
+  if (doc) {
+    await doc.constructor.calculateProviderRating(doc.provider);
+  }
+});
+
+// After deleteOne (document)
+reviewSchema.post("deleteOne", { document: true }, async function () {
+  await this.constructor.calculateProviderRating(this.provider);
+});
+
+/* ============================
+   INDEXES
+============================ */
+reviewSchema.index({ provider: 1, createdAt: -1 });
+reviewSchema.index({ provider: 1, rating: -1 });
 
 export default mongoose.model("Review", reviewSchema);

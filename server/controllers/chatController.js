@@ -1,14 +1,22 @@
-import Conversation from "../models/Conversation.js";
 import Message from "../models/Message.js";
 import {
   getOrCreateConversationService,
   createMessageService,
 } from "../services/chatService.js";
 
+/* ============================
+   GET OR CREATE CONVERSATION
+============================ */
 export const getOrCreateConversation = async (req, res) => {
   try {
     const { bookingId } = req.params;
-    const conversation = await getOrCreateConversationService(bookingId, req.user.id);
+    const userId = req.user.id;
+
+    if (!bookingId || !bookingId.match(/^[0-9a-fA-F]{24}$/)) {
+      return res.status(400).json({ success: false, message: "Invalid booking ID" });
+    }
+
+    const conversation = await getOrCreateConversationService(bookingId, userId);
 
     const messages = await Message.find({ conversationId: conversation._id })
       .sort({ createdAt: 1 })
@@ -23,33 +31,31 @@ export const getOrCreateConversation = async (req, res) => {
       text: m.text,
       imageUrl: m.imageUrl,
       createdAt: m.createdAt,
-      self: m.senderId._id.toString() === req.user.id,
+      self: m.senderId._id.toString() === userId,
     }));
 
-    res.json({
-      success: true,
-      conversation: {
-        ...conversation.toObject(),
-        messages: normalizedMessages,
-      },
-    });
+    res.json({ success: true, conversation: { ...conversation.toObject(), messages: normalizedMessages } });
   } catch (err) {
-    console.error("🔥 ChatController error:", err.message);
-    res.status(400).json({ success: false, message: err.message });
+    console.error("🔥 ChatController getOrCreateConversation error:", err.message);
+    const status = err.message === "Unauthorized" ? 403 : 500;
+    res.status(status).json({ success: false, message: err.message });
   }
 };
 
+/* ============================
+        SEND MESSAGE
+============================ */
 export const sendMessage = async (req, res) => {
   try {
     const { conversationId } = req.params;
     const { text, imageUrl } = req.body;
+    const userId = req.user.id;
 
-    const message = await createMessageService({
-      conversationId,
-      senderId: req.user.id,
-      text,
-      imageUrl,
-    });
+    if (!conversationId || !conversationId.match(/^[0-9a-fA-F]{24}$/)) {
+      return res.status(400).json({ success: false, message: "Invalid conversation ID" });
+    }
+
+    const message = await createMessageService({ conversationId, senderId: userId, text, imageUrl });
 
     await message.populate("senderId", "name avatar");
 
@@ -64,11 +70,12 @@ export const sendMessage = async (req, res) => {
         text: message.text,
         imageUrl: message.imageUrl,
         createdAt: message.createdAt,
-        self: message.senderId._id.toString() === req.user.id,
+        self: message.senderId._id.toString() === userId,
       },
     });
   } catch (err) {
     console.error("🔥 ChatController sendMessage error:", err.message);
-    res.status(400).json({ success: false, message: err.message });
+    const status = err.message === "Unauthorized" ? 403 : 500;
+    res.status(status).json({ success: false, message: err.message });
   }
 };

@@ -8,12 +8,18 @@ import {
   FaTimes,
   FaRegStar,
   FaStarHalfAlt,
-  FaBell
+  FaBell,
 } from "react-icons/fa";
 import { useAuth } from "../../context/AuthContext.jsx";
-import Chat from "../../components/Chat/Chat.jsx"; // Chat integration
+import Chat from "../../components/Chat/Chat.jsx";
 
 const API_URL = import.meta.env.VITE_API_URL || "http://localhost:5000/api";
+
+const getProviderId = (provider) => {
+  if (!provider) return "";
+  if (typeof provider === "string") return provider;
+  return provider._id || provider.id || "";
+};
 
 export default function CustomerDashboard() {
   const { user, token, logout } = useAuth();
@@ -33,7 +39,7 @@ export default function CustomerDashboard() {
     date: "",
     time: "",
     location: "",
-    notes: ""
+    notes: "",
   });
 
   const [providerReviews, setProviderReviews] = useState([]);
@@ -50,21 +56,39 @@ export default function CustomerDashboard() {
     logout();
   };
 
+  const chatBooking = useMemo(
+    () => bookings.find((b) => b._id === chatBookingId) || null,
+    [bookings, chatBookingId]
+  );
+
+  const chatProviderName =
+    chatBooking?.provider?.basicInfo?.providerName ||
+    chatBooking?.provider?.name ||
+    "Provider";
+
   /* ---------------------- FETCH BOOKINGS & PROVIDERS ---------------------- */
   useEffect(() => {
     if (!user || !token) return;
 
     const fetchData = async () => {
       try {
-        const bookingsRes = await fetch(`${API_URL}/bookings`, {
-          headers: { Authorization: `Bearer ${token}` }
-        });
-        if (bookingsRes.status === 401) return handleUnauthorized();
-        const bookingsData = await bookingsRes.json();
-        setBookings(Array.isArray(bookingsData.bookings) ? bookingsData.bookings : []);
+        const [bookingsRes, providersRes] = await Promise.all([
+          fetch(`${API_URL}/bookings`, {
+            headers: { Authorization: `Bearer ${token}` },
+          }),
+          fetch(`${API_URL}/providers`),
+        ]);
 
-        const providersRes = await fetch(`${API_URL}/providers`);
-        const providersData = await providersRes.json();
+        if (bookingsRes.status === 401 || providersRes.status === 401) {
+          return handleUnauthorized();
+        }
+
+        const [bookingsData, providersData] = await Promise.all([
+          bookingsRes.json(),
+          providersRes.json(),
+        ]);
+
+        setBookings(Array.isArray(bookingsData.bookings) ? bookingsData.bookings : []);
         setProviders(Array.isArray(providersData) ? providersData : []);
       } catch (err) {
         console.error("Fetch bookings/providers error:", err);
@@ -86,6 +110,7 @@ export default function CustomerDashboard() {
         setReviewsLoading(true);
         const res = await fetch(`${API_URL}/reviews/${selectedProvider._id}`);
         if (res.status === 401) return handleUnauthorized();
+
         const data = await res.json();
         setProviderReviews(Array.isArray(data.reviews) ? data.reviews : []);
       } catch (err) {
@@ -120,14 +145,22 @@ export default function CustomerDashboard() {
       const matchesSearch = (p.basicInfo?.providerName || "")
         .toLowerCase()
         .includes(searchTerm.toLowerCase());
+
       const matchesService =
-        !serviceFilter || p.services?.some((s) => s.name.toLowerCase() === serviceFilter.toLowerCase());
+        !serviceFilter ||
+        p.services?.some((s) => s.name.toLowerCase() === serviceFilter.toLowerCase());
+
       return matchesSearch && matchesService;
     });
   }, [providers, searchTerm, serviceFilter]);
 
   /* ---------------------- BOOKING ---------------------- */
   const submitBooking = async () => {
+    if (!bookingProvider?._id) {
+      alert("Please select a provider.");
+      return;
+    }
+
     if (!quickBooking.date || !quickBooking.time || !quickBooking.location || !selectedService) {
       alert("Please complete all booking fields.");
       return;
@@ -135,23 +168,26 @@ export default function CustomerDashboard() {
 
     try {
       const scheduledAt = new Date(`${quickBooking.date}T${quickBooking.time}`);
+
       const res = await fetch(`${API_URL}/bookings`, {
         method: "POST",
-        headers: { 
+        headers: {
           Authorization: `Bearer ${token}`,
-          "Content-Type": "application/json"
+          "Content-Type": "application/json",
         },
         body: JSON.stringify({
           providerId: bookingProvider._id,
           serviceId: selectedService,
           scheduledAt,
           location: quickBooking.location,
-          notes: quickBooking.notes
-        })
+          notes: quickBooking.notes,
+        }),
       });
+
       if (res.status === 401) return handleUnauthorized();
+
       const data = await res.json();
-      if (!res.ok) throw new Error(data.message);
+      if (!res.ok) throw new Error(data.message || "Booking failed");
 
       setBookings((prev) => [data.booking, ...prev]);
       setNotification("Booking confirmed!");
@@ -176,28 +212,34 @@ export default function CustomerDashboard() {
       return;
     }
 
+    if (!reviewBooking?._id) {
+      alert("Invalid booking.");
+      return;
+    }
+
     try {
-      const providerId = reviewBooking?.provider?._id || reviewBooking?.provider || "";
+      const providerId = getProviderId(reviewBooking.provider);
       if (!providerId) throw new Error("Provider not found for this booking.");
 
       const res = await fetch(`${API_URL}/reviews`, {
         method: "POST",
         headers: {
           Authorization: `Bearer ${token}`,
-          "Content-Type": "application/json"
+          "Content-Type": "application/json",
         },
         body: JSON.stringify({
-          providerId,
+          providerId: String(providerId),
           bookingId: reviewBooking._id,
           rating: reviewData.rating,
-          comment: reviewData.comment
-        })
+          comment: reviewData.comment,
+        }),
       });
 
       if (res.status === 401) return handleUnauthorized();
 
       const data = await res.json();
-      if (!res.ok) throw new Error(data.message);
+
+      if (!res.ok) throw new Error(data.message || "Failed to submit review");
 
       setBookings((prev) =>
         prev.map((b) => (b._id === reviewBooking._id ? { ...b, reviewed: true } : b))
@@ -206,6 +248,7 @@ export default function CustomerDashboard() {
       if (selectedProvider?._id === providerId) {
         const refreshed = await fetch(`${API_URL}/reviews/${providerId}`);
         if (refreshed.status === 401) return handleUnauthorized();
+
         const refreshedData = await refreshed.json();
         setProviderReviews(Array.isArray(refreshedData.reviews) ? refreshedData.reviews : []);
       }
@@ -213,8 +256,8 @@ export default function CustomerDashboard() {
       setReviewBooking(null);
       setNotification("Review submitted!");
       setTimeout(() => setNotification(null), 4000);
-
     } catch (err) {
+      console.error("SUBMIT REVIEW ERROR:", err);
       alert(err.message);
     }
   };
@@ -263,8 +306,12 @@ export default function CustomerDashboard() {
             {filteredBookings.map((b) => (
               <div key={b._id} className="bg-white rounded-xl shadow p-4">
                 <p className="font-semibold">{b.serviceName}</p>
-                <p className="text-sm text-gray-500">{b.provider?.basicInfo?.providerName || b.provider?.name}</p>
-                <p className="text-sm text-gray-400">{new Date(b.scheduledAt).toLocaleString()}</p>
+                <p className="text-sm text-gray-500">
+                  {b.provider?.basicInfo?.providerName || b.provider?.name}
+                </p>
+                <p className="text-sm text-gray-400">
+                  {new Date(b.scheduledAt).toLocaleString()}
+                </p>
                 <div className="mt-2">
                   <StatusBadge status={b.status} />
                 </div>
@@ -311,7 +358,9 @@ export default function CustomerDashboard() {
           >
             <option value="">All Services</option>
             {allServices.map((s) => (
-              <option key={s} value={s}>{s}</option>
+              <option key={s} value={s}>
+                {s}
+              </option>
             ))}
           </select>
         </div>
@@ -331,14 +380,20 @@ export default function CustomerDashboard() {
                     className="w-24 h-24 rounded-full object-cover border-4 border-sky-100 shadow"
                   />
                 </div>
-                <h3 className="font-bold text-lg text-sky-600">{p.basicInfo?.providerName}</h3>
-                <p className="text-sm text-gray-500">{p.services?.map((s) => s.name).join(", ")}</p>
+                <h3 className="font-bold text-lg text-sky-600">
+                  {p.basicInfo?.providerName}
+                </h3>
+                <p className="text-sm text-gray-500">
+                  {p.services?.map((s) => s.name).join(", ")}
+                </p>
                 <div className="flex items-center justify-center gap-2">
                   <StarRating rating={p.rating} />
                   <span className="text-sm">{(p.rating || 0).toFixed(1)}</span>
                 </div>
                 <p className="text-sm mt-1">{p.experience} years experience</p>
-                <p className="text-sky-600 font-semibold">From ${p.services?.[0]?.price || 20}</p>
+                <p className="text-sky-600 font-semibold">
+                  From ${p.services?.[0]?.price || 20}
+                </p>
               </div>
             ))}
           </div>
@@ -356,6 +411,7 @@ export default function CustomerDashboard() {
           setSelectedService={setSelectedService}
         />
       )}
+
       {bookingProvider && (
         <BookingModal
           bookingProvider={bookingProvider}
@@ -367,6 +423,7 @@ export default function CustomerDashboard() {
           setBookingProvider={setBookingProvider}
         />
       )}
+
       {reviewBooking && (
         <ReviewModal
           reviewBooking={reviewBooking}
@@ -377,11 +434,14 @@ export default function CustomerDashboard() {
         />
       )}
 
-      {/* ---------------- CHAT MODAL ---------------- */}
       {chatBookingId && (
-        <Modal onClose={() => setChatBookingId(null)}>
-          <Chat bookingId={chatBookingId} token={token} userId={user.id} />
-        </Modal>
+        <ChatModal
+          booking={chatBooking}
+          providerName={chatProviderName}
+          token={token}
+          userId={user?._id || user?.id}
+          onClose={() => setChatBookingId(null)}
+        />
       )}
     </div>
   );
@@ -412,89 +472,200 @@ const StatusBadge = ({ status }) => {
     pending: "bg-yellow-100 text-yellow-700",
     accepted: "bg-blue-100 text-blue-700",
     completed: "bg-green-100 text-green-700",
-    cancelled: "bg-red-100 text-red-700"
+    cancelled: "bg-red-100 text-red-700",
   };
-  return <span className={`px-3 py-1 rounded-full text-sm ${styles[status] || "bg-gray-100 text-gray-700"}`}>{status}</span>;
+
+  return (
+    <span
+      className={`px-3 py-1 rounded-full text-sm ${styles[status] || "bg-gray-100 text-gray-700"}`}
+    >
+      {status}
+    </span>
+  );
 };
 
 const StarRating = ({ rating = 0 }) => {
   const stars = [];
   for (let i = 1; i <= 5; i++) {
     if (rating >= i) stars.push(<FaStar key={i} className="text-yellow-400" />);
-    else if (rating >= i - 0.5) stars.push(<FaStarHalfAlt key={i} className="text-yellow-400" />);
+    else if (rating >= i - 0.5)
+      stars.push(<FaStarHalfAlt key={i} className="text-yellow-400" />);
     else stars.push(<FaRegStar key={i} className="text-gray-300" />);
   }
   return <div className="flex gap-1 justify-center">{stars}</div>;
 };
 
+const StarRatingSelector = ({ rating, setRating }) => {
+  const stars = [];
+  for (let i = 1; i <= 5; i++) {
+    stars.push(
+      <span key={i} onClick={() => setRating(i)} className="cursor-pointer">
+        {i <= rating ? <FaStar className="text-yellow-400 inline" /> : <FaRegStar className="text-gray-300 inline" />}
+      </span>
+    );
+  }
+  return <div className="flex gap-1 justify-center mb-2">{stars}</div>;
+};
+
+/* ---------------- MODALS ---------------- */
 const Modal = ({ children, onClose }) => (
   <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
-    <div className="bg-white rounded-xl p-6 w-[400px] relative max-h-[85vh] overflow-y-auto">
-      <button className="absolute top-3 right-3" onClick={onClose}><FaTimes /></button>
+    <div className="bg-white rounded-xl p-6 relative w-full sm:w-11/12 md:w-3/4 lg:w-2/3 xl:w-1/2 max-h-[85vh] overflow-y-auto">
+      <button className="absolute top-3 right-3" onClick={onClose}>
+        <FaTimes />
+      </button>
       {children}
     </div>
   </div>
 );
 
-const ProviderModal = ({ selectedProvider, setSelectedProvider, providerReviews, reviewsLoading, setBookingProvider, setSelectedService }) => (
+const ChatModal = ({ booking, providerName, token, userId, onClose }) => (
+  <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
+    <div className="bg-white rounded-xl w-full sm:w-11/12 md:w-3/4 lg:w-2/3 xl:w-1/2 h-[85vh] max-h-[85vh] overflow-hidden flex flex-col shadow-2xl">
+      <div className="shrink-0 bg-white border-b px-6 py-4 flex items-center justify-between">
+        <h2 className="text-lg font-bold text-sky-500">Chat with {providerName}</h2>
+        <button className="text-gray-600 hover:text-gray-900" onClick={onClose}>
+          <FaTimes />
+        </button>
+      </div>
+
+      <div className="flex-1 min-h-0 overflow-hidden">
+        <div className="h-full w-full p-4">
+          <Chat bookingId={booking?._id} token={token} userId={userId} />
+        </div>
+      </div>
+    </div>
+  </div>
+);
+
+const ProviderModal = ({
+  selectedProvider,
+  setSelectedProvider,
+  providerReviews,
+  reviewsLoading,
+  setBookingProvider,
+  setSelectedService,
+}) => (
   <Modal onClose={() => setSelectedProvider(null)}>
     <div className="flex justify-center mb-3">
-      <img src={selectedProvider.basicInfo?.photoURL || "https://dummyimage.com/300x300/ccc/000"} alt={selectedProvider.basicInfo?.providerName || "Provider"} className="w-24 h-24 rounded-full object-cover border-4 border-sky-100 shadow" />
+      <img
+        src={selectedProvider.basicInfo?.photoURL || "https://dummyimage.com/300x300/ccc/000"}
+        alt={selectedProvider.basicInfo?.providerName || "Provider"}
+        className="w-24 h-24 rounded-full object-cover border-4 border-sky-100 shadow"
+      />
     </div>
-    <h2 className="text-xl font-bold text-sky-500 mb-2">{selectedProvider.basicInfo?.providerName}</h2>
+    <h2 className="text-xl font-bold text-sky-500 mb-2">
+      {selectedProvider.basicInfo?.providerName}
+    </h2>
     <StarRating rating={selectedProvider.rating} />
-    <p className="mt-2 text-sm text-gray-600">Services: {selectedProvider.services?.map((s) => s.name).join(", ")}</p>
-    <p className="mt-1 text-sm text-gray-600">Experience: {selectedProvider.experience || 0} years</p>
-    <button className="bg-sky-500 text-white w-full py-2 rounded-lg mt-4" onClick={() => { setBookingProvider(selectedProvider); setSelectedProvider(null); setSelectedService(""); }}>Book Now</button>
+    <p className="mt-2 text-sm text-gray-600">
+      Services: {selectedProvider.services?.map((s) => s.name).join(", ")}
+    </p>
+    <p className="mt-1 text-sm text-gray-600">
+      Experience: {selectedProvider.experience || 0} years
+    </p>
+    <button
+      className="bg-sky-500 text-white w-full py-2 rounded-lg mt-4"
+      onClick={() => {
+        setBookingProvider(selectedProvider);
+        setSelectedProvider(null);
+        setSelectedService("");
+      }}
+    >
+      Book Now
+    </button>
     <div className="mt-6 text-left">
       <h3 className="font-semibold text-sky-600 mb-3">Reviews</h3>
-      {reviewsLoading ? <p className="text-sm text-gray-500">Loading reviews...</p> :
-        providerReviews.length === 0 ? <p className="text-sm text-gray-500">No reviews yet.</p> :
-        providerReviews.map(r => (
+      {reviewsLoading ? (
+        <p className="text-sm text-gray-500">Loading reviews...</p>
+      ) : providerReviews.length === 0 ? (
+        <p className="text-sm text-gray-500">No reviews yet.</p>
+      ) : (
+        providerReviews.map((r) => (
           <div key={r._id} className="border rounded-lg p-2 mb-2">
             <div className="flex justify-between items-center">
-              <p className="text-sm font-semibold">{r.userName}</p>
+              <p className="text-sm font-semibold">{r.customer?.name || "Anonymous"}</p>
               <StarRating rating={r.rating} />
             </div>
             <p className="text-sm text-gray-500">{r.comment}</p>
           </div>
-        ))}
+        ))
+      )}
     </div>
   </Modal>
 );
 
-const BookingModal = ({ bookingProvider, quickBooking, setQuickBooking, selectedService, setSelectedService, submitBooking, setBookingProvider }) => (
+const BookingModal = ({
+  bookingProvider,
+  quickBooking,
+  setQuickBooking,
+  selectedService,
+  setSelectedService,
+  submitBooking,
+  setBookingProvider,
+}) => (
   <Modal onClose={() => setBookingProvider(null)}>
-    <h2 className="text-xl font-bold text-sky-500 mb-4">Book {bookingProvider.basicInfo?.providerName}</h2>
-    <input type="date" className="border w-full px-3 py-2 mb-2 rounded" value={quickBooking.date} onChange={e => setQuickBooking(prev => ({ ...prev, date: e.target.value }))} />
-    <input type="time" className="border w-full px-3 py-2 mb-2 rounded" value={quickBooking.time} onChange={e => setQuickBooking(prev => ({ ...prev, time: e.target.value }))} />
-    <input type="text" placeholder="Location" className="border w-full px-3 py-2 mb-2 rounded" value={quickBooking.location} onChange={e => setQuickBooking(prev => ({ ...prev, location: e.target.value }))} />
-    <textarea placeholder="Notes" className="border w-full px-3 py-2 mb-2 rounded" value={quickBooking.notes} onChange={e => setQuickBooking(prev => ({ ...prev, notes: e.target.value }))} />
-    <select className="border w-full px-3 py-2 mb-2 rounded" value={selectedService} onChange={e => setSelectedService(e.target.value)}>
+    <h2 className="text-xl font-bold text-sky-500 mb-4">
+      Book {bookingProvider.basicInfo?.providerName}
+    </h2>
+    <input
+      type="date"
+      className="border w-full px-3 py-2 mb-2 rounded"
+      value={quickBooking.date}
+      onChange={(e) => setQuickBooking((prev) => ({ ...prev, date: e.target.value }))}
+    />
+    <input
+      type="time"
+      className="border w-full px-3 py-2 mb-2 rounded"
+      value={quickBooking.time}
+      onChange={(e) => setQuickBooking((prev) => ({ ...prev, time: e.target.value }))}
+    />
+    <input
+      type="text"
+      placeholder="Location"
+      className="border w-full px-3 py-2 mb-2 rounded"
+      value={quickBooking.location}
+      onChange={(e) => setQuickBooking((prev) => ({ ...prev, location: e.target.value }))}
+    />
+    <textarea
+      placeholder="Notes"
+      className="border w-full px-3 py-2 mb-2 rounded"
+      value={quickBooking.notes}
+      onChange={(e) => setQuickBooking((prev) => ({ ...prev, notes: e.target.value }))}
+    />
+    <select
+      className="border w-full px-3 py-2 mb-2 rounded"
+      value={selectedService}
+      onChange={(e) => setSelectedService(e.target.value)}
+    >
       <option value="">Select Service</option>
-      {bookingProvider.services?.map(s => <option key={s._id} value={s._id}>{s.name} - ${s.price}</option>)}
+      {bookingProvider.services?.map((s) => (
+        <option key={s._id} value={s._id}>
+          {s.name} - ${s.price}
+        </option>
+      ))}
     </select>
-    <button className="bg-sky-500 text-white w-full py-2 rounded" onClick={submitBooking}>Confirm Booking</button>
+    <button className="bg-sky-500 text-white w-full py-2 rounded" onClick={submitBooking}>
+      Confirm Booking
+    </button>
   </Modal>
 );
 
 const ReviewModal = ({ reviewBooking, reviewData, setReviewData, submitReview, setReviewBooking }) => (
   <Modal onClose={() => setReviewBooking(null)}>
     <h2 className="text-xl font-bold text-sky-500 mb-4">Review {reviewBooking.serviceName}</h2>
-    <StarRatingSelector rating={reviewData.rating} setRating={r => setReviewData(prev => ({ ...prev, rating: r }))} />
-    <textarea placeholder="Comment" className="border w-full px-3 py-2 mb-2 rounded" value={reviewData.comment} onChange={e => setReviewData(prev => ({ ...prev, comment: e.target.value }))} />
-    <button className="bg-sky-500 text-white w-full py-2 rounded" onClick={submitReview}>Submit Review</button>
+    <StarRatingSelector
+      rating={reviewData.rating}
+      setRating={(r) => setReviewData((prev) => ({ ...prev, rating: r }))}
+    />
+    <textarea
+      placeholder="Comment"
+      className="border w-full px-3 py-2 mb-2 rounded"
+      value={reviewData.comment}
+      onChange={(e) => setReviewData((prev) => ({ ...prev, comment: e.target.value }))}
+    />
+    <button className="bg-sky-500 text-white w-full py-2 rounded" onClick={submitReview}>
+      Submit Review
+    </button>
   </Modal>
 );
-
-const StarRatingSelector = ({ rating, setRating }) => {
-  const stars = [];
-  for (let i = 1; i <= 5; i++) {
-    stars.push(
-      <span key={i} onClick={() => setRating(i)}>
-        {i <= rating ? <FaStar className="text-yellow-400 inline" /> : <FaRegStar className="text-gray-300 inline" />}
-      </span>
-    );
-  }
-  return <div className="flex gap-1 justify-center mb-2 cursor-pointer">{stars}</div>;
-};

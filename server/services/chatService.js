@@ -1,54 +1,72 @@
-// src/services/chatService.js
 import Conversation from "../models/Conversation.js";
-import Message from "../models/Message.js";
 import Booking from "../models/Booking.js";
+import Message from "../models/Message.js";
 
-/* ---------------- VALIDATE PARTICIPANT ---------------- */
-export const isParticipant = (conversation, userId) => {
-  return conversation.participants.some(
-    (p) => p.toString() === userId
-  );
-};
-
-/* ---------------- GET OR CREATE CONVERSATION ---------------- */
+/**
+ * Get an existing conversation for a booking or create a new one.
+ * Ensures only the customer or the provider's user can access.
+ *
+ * @param {string} bookingId
+ * @param {string} userId
+ * @returns {Promise<Conversation>}
+ */
 export const getOrCreateConversationService = async (bookingId, userId) => {
-  console.log("DEBUG: bookingId:", bookingId);
+  // Fetch booking and populate customer and provider.user
+  const booking = await Booking.findById(bookingId)
+    .populate("customer", "_id name")
+    .populate({ path: "provider", populate: { path: "user", select: "_id name" } });
 
-  const booking = await Booking.findById(bookingId);
-  if (!booking) throw new Error("Booking not found");
-
-  const allowed =
-    booking.customer.toString() === userId ||
-    booking.provider.toString() === userId;
-
-  if (!allowed) throw new Error("Unauthorized");
-
-  let conversation = await Conversation.findOne({ bookingId });
-  console.log("DEBUG: Found conversation:", conversation?._id);
-
-  if (!conversation) {
-    console.log("DEBUG: Creating new conversation");
-    conversation = await Conversation.create({
-      bookingId,
-      participants: [booking.customer, booking.provider],
-    });
+  if (!booking) {
+    throw new Error("Booking not found");
   }
 
-  console.log("DEBUG: Returning conversation:", conversation._id);
+  const customerId = booking.customer?._id?.toString();
+  const providerUserId = booking.provider?.user?._id?.toString();
+
+  if (!customerId || !providerUserId) {
+    throw new Error("Booking participants not properly defined");
+  }
+
+  const isParticipant = userId === customerId || userId === providerUserId;
+  if (!isParticipant) {
+    console.log("Unauthorized access attempt:", { userId, customerId, providerUserId });
+    throw new Error("Unauthorized");
+  }
+
+  // Find existing conversation
+  let conversation = await Conversation.findOne({ bookingId });
+
+  if (!conversation) {
+    // Create new conversation
+    conversation = await Conversation.create({
+      bookingId,
+      participants: [customerId, providerUserId],
+      lastMessage: null,
+    });
+    console.log("✅ Created new conversation for booking:", bookingId);
+  } else {
+    console.log("ℹ️ Found existing conversation:", conversation._id);
+  }
+
   return conversation;
 };
 
-/* ---------------- CREATE MESSAGE ---------------- */
-export const createMessageService = async ({
-  conversationId,
-  senderId,
-  text,
-  imageUrl,
-}) => {
+/**
+ * Create a new message in a conversation.
+ * Validates sender is a participant.
+ *
+ * @param {Object} params
+ * @param {string} params.conversationId
+ * @param {string} params.senderId
+ * @param {string} params.text
+ * @param {string} params.imageUrl
+ * @returns {Promise<Message>}
+ */
+export const createMessageService = async ({ conversationId, senderId, text, imageUrl }) => {
   const conversation = await Conversation.findById(conversationId);
   if (!conversation) throw new Error("Conversation not found");
 
-  if (!isParticipant(conversation, senderId)) {
+  if (!conversation.participants.some((p) => p.toString() === senderId)) {
     throw new Error("Unauthorized");
   }
 

@@ -6,9 +6,12 @@ import jwt from "jsonwebtoken";
 
 let io;
 
+/* ---------------- ONLINE USERS (multi-device safe) ---------------- */
+const onlineUsers = new Map(); // userId -> Set(socketIds)
+
 export const initSocket = (server) => {
   io = new Server(server, {
-    path: "/socket.io", // must match client
+    path: "/socket.io",
     cors: {
       origin: process.env.CLIENT_URL || "http://localhost:5173",
       methods: ["GET", "POST"],
@@ -16,77 +19,172 @@ export const initSocket = (server) => {
     },
   });
 
+  /* ---------------- AUTH MIDDLEWARE ---------------- */
   io.use((socket, next) => {
-    const token = socket.handshake.auth.token;
-
-    if (!token) return next(new Error("Authentication error"));
+    const token = socket.handshake.auth?.token;
+    if (!token) return next(new Error("Authentication error: No token"));
 
     try {
       const decoded = jwt.verify(token, process.env.JWT_SECRET);
-      socket.user = decoded;
+      socket.user = { id: decoded.id, name: decoded.name || "User" };
       next();
-    } catch (err) {
-      return next(new Error("Authentication error"));
+    } catch {
+      return next(new Error("Authentication error: Invalid token"));
     }
   });
 
+  /* ---------------- CONNECTION ---------------- */
   io.on("connection", (socket) => {
-    console.log(`✅ Socket connected: ${socket.id} (user: ${socket.user.id})`);
+    const userId = socket.user.id;
+    console.log(`✅ Socket connected: ${socket.id} (user: ${userId})`);
+
+    /* ----------- TRACK ONLINE USERS ----------- */
+    if (!onlineUsers.has(userId)) {
+      onlineUsers.set(userId, new Set());
+      io.emit("user_online", userId);
+    }
+    onlineUsers.get(userId).add(socket.id);
 
     /* ---------------- JOIN CONVERSATION ---------------- */
-    socket.on("join_conversation", (conversationId) => {
-      socket.join(conversationId);
-      console.log(`User ${socket.user.id} joined conversation ${conversationId}`);
+    socket.on("join_conversation", async (conversationId) => {
+      try {
+        const conversation = await Conversation.findById(conversationId).populate({
+          path: "bookingId",
+          populate: [
+            { path: "customer", select: "_id name" },
+            { path: "provider", populate: { path: "user", select: "_id name" } },
+          ],
+        });
+
+        if (!conversation) {
+          console.log("❌ Conversation not found");
+          return socket.emit("error", "Conversation not found");
+        }
+
+        const booking = conversation.bookingId;
+        const customerId = booking.customer?._id?.toString();
+        const providerUserId = booking.provider?.user?._id?.toString();
+
+        if (userId !== customerId && userId !== providerUserId) {
+          console.log("❌ Unauthorized join attempt", { userId, customerId, providerUserId });
+          return socket.disconnect(true);
+        }
+
+        socket.join(conversationId);
+        console.log(`📥 User ${userId} joined conversation ${conversationId}`);
+      } catch (err) {
+        console.error("Join error:", err.message);
+        socket.disconnect(true);
+      }
+    });
+
+    /* ---------------- TYPING INDICATORS ---------------- */
+    socket.on("typing", ({ conversationId }) => {
+      socket.to(conversationId).emit("user_typing", {
+        userId,
+        name: socket.user.name,
+      });
+    });
+
+    socket.on("stop_typing", ({ conversationId }) => {
+      socket.to(conversationId).emit("user_stop_typing", { userId });
     });
 
     /* ---------------- SEND MESSAGE ---------------- */
     socket.on("send_message", async (data, callback) => {
       try {
-        const { conversationId, text, imageUrl } = data;
+        const { conversationId, text, imageUrl, tempId } = data; // <-- include tempId
 
-        const conversation = await Conversation.findById(conversationId);
+        if (!text && !imageUrl) return callback({ success: false, error: "Empty message" });
+
+        const conversation = await Conversation.findById(conversationId).populate({
+          path: "bookingId",
+          populate: [
+            { path: "customer", select: "_id" },
+            { path: "provider", populate: { path: "user", select: "_id" } },
+          ],
+        });
+
         if (!conversation) throw new Error("Conversation not found");
 
-        if (!conversation.participants.includes(socket.user.id)) {
-          throw new Error("Unauthorized");
-        }
+        const booking = conversation.bookingId;
+        const customerId = booking.customer?._id?.toString();
+        const providerUserId = booking.provider?.user?._id?.toString();
 
+        if (userId !== customerId && userId !== providerUserId) throw new Error("Unauthorized");
+
+        // CREATE MESSAGE
         const message = await Message.create({
           conversationId,
-          senderId: socket.user.id,
+          senderId: userId,
           text: text || "",
           imageUrl: imageUrl || "",
           type: imageUrl ? "image" : "text",
-          readBy: [socket.user.id],
+          readBy: [userId],
         });
 
-        // Update last message
+        // UPDATE CONVERSATION
         conversation.lastMessage = message._id;
         await conversation.save();
 
-        const msgForClient = {
+        // EMIT MESSAGE (pass tempId back!)
+        const payload = {
           _id: message._id,
           conversationId: message.conversationId,
-          senderId: message.senderId,
-          senderName: socket.user.name || "Unknown",
+          senderId: userId,
+          senderName: socket.user.name,
           text: message.text,
           imageUrl: message.imageUrl,
           createdAt: message.createdAt,
-          self: false,
+          tempId: tempId || null, // <-- tempId for optimistic UI replacement
         };
 
-        // Emit to all participants in the room
-        io.to(conversationId).emit("receive_message", msgForClient);
+        io.to(conversationId).emit("receive_message", payload);
+
+        // EMIT DELIVERED EVENT
+        io.to(conversationId).emit("message_delivered", { messageId: message._id });
 
         callback({ success: true });
       } catch (err) {
-        console.error("Socket send_message error:", err.message);
+        console.error("send_message error:", err.message);
         callback({ success: false, error: err.message });
       }
     });
 
+    /* ---------------- MARK SEEN ---------------- */
+    socket.on("mark_seen", async ({ conversationId }) => {
+      try {
+        const messages = await Message.find({
+          conversationId,
+          readBy: { $ne: userId },
+        });
+
+        const messageIds = messages.map((m) => m._id);
+        if (!messageIds.length) return;
+
+        await Message.updateMany(
+          { _id: { $in: messageIds } },
+          { $addToSet: { readBy: userId } }
+        );
+
+        io.to(conversationId).emit("messages_seen", { messageIds, userId });
+      } catch (err) {
+        console.error("mark_seen error:", err.message);
+      }
+    });
+
+    /* ---------------- DISCONNECT ---------------- */
     socket.on("disconnect", (reason) => {
       console.log(`⚠️ Socket disconnected: ${socket.id} (reason: ${reason})`);
+
+      const sockets = onlineUsers.get(userId);
+      if (sockets) {
+        sockets.delete(socket.id);
+        if (!sockets.size) {
+          onlineUsers.delete(userId);
+          io.emit("user_offline", userId);
+        }
+      }
     });
   });
 };
