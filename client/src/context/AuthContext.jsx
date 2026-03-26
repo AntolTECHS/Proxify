@@ -6,14 +6,14 @@ const AuthContext = createContext();
 export const useAuth = () => useContext(AuthContext);
 
 export const AuthProvider = ({ children }) => {
+  const navigate = useNavigate();
+  const API_URL = import.meta.env.VITE_API_URL || "http://localhost:5000/api";
+
   const [user, setUser] = useState(null);
   const [token, setToken] = useState(null);
   const [status, setStatus] = useState("idle");
   const [error, setError] = useState(null);
   const [isLoading, setIsLoading] = useState(true);
-  const navigate = useNavigate();
-
-  const API_URL = import.meta.env.VITE_API_URL || "http://localhost:5000/api";
 
   // Load user & token from localStorage on app start
   useEffect(() => {
@@ -26,11 +26,18 @@ export const AuthProvider = ({ children }) => {
     setIsLoading(false);
   }, []);
 
+  // Save user and token to state + localStorage
   const saveAuth = (userData, token) => {
-    localStorage.setItem("token", token);
-    localStorage.setItem("user", JSON.stringify(userData));
     setUser(userData);
     setToken(token);
+    localStorage.setItem("user", JSON.stringify(userData));
+    localStorage.setItem("token", token);
+  };
+
+  // Update user without affecting token
+  const updateUser = (updatedUser) => {
+    setUser(updatedUser);
+    localStorage.setItem("user", JSON.stringify(updatedUser));
   };
 
   // ---------------- REGISTER ----------------
@@ -86,8 +93,8 @@ export const AuthProvider = ({ children }) => {
 
     if (!token) {
       const err = new Error("You are not logged in. Please log in again.");
-      setError(err);
       setStatus("error");
+      setError(err);
       return { success: false, error: err };
     }
 
@@ -96,27 +103,22 @@ export const AuthProvider = ({ children }) => {
         method: "POST",
         headers: {
           Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json",
         },
-        body: formData,
+        body: JSON.stringify(formData),
       });
 
       const data = await res.json();
-
       if (!res.ok) throw new Error(data.message || "Onboarding failed");
 
-      // Use new token returned from backend
       const newToken = data.token || token;
 
-      // Update user role immediately to provider
-      const updatedUser = {
-        ...user,
-        role: "provider",
-      };
-
+      const updatedUser = { ...user, role: "provider" };
       saveAuth(updatedUser, newToken);
+
       setStatus("success");
 
-      // Redirect directly to provider dashboard
+      // redirect to provider dashboard
       navigate("/provider/dashboard", { replace: true });
 
       return { success: true, user: updatedUser };
@@ -129,11 +131,11 @@ export const AuthProvider = ({ children }) => {
 
   // ---------------- LOGOUT ----------------
   const logout = () => {
-    localStorage.removeItem("token");
-    localStorage.removeItem("user");
     setUser(null);
     setToken(null);
     setStatus("idle");
+    localStorage.removeItem("token");
+    localStorage.removeItem("user");
     navigate("/login");
   };
 
@@ -146,6 +148,7 @@ export const AuthProvider = ({ children }) => {
     register,
     login,
     logout,
+    updateUser, // <-- added
     upgradeToProvider,
   };
 

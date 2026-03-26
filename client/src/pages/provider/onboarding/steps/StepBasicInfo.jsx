@@ -1,22 +1,28 @@
+// src/pages/provider/onboarding/steps/StepBasicInfo.jsx
 import { useState, useEffect } from "react";
+import { useAuth } from "../../../../context/AuthContext.jsx";
 
-export default function StepBasicInfo({ next, update, data = {} }) {
-  const [providerName, setProviderName] = useState(data.basicInfo?.providerName || "");
-  const [email, setEmail] = useState(data.basicInfo?.email || "");
-  const [phone, setPhone] = useState(data.basicInfo?.phone || "");
-  const [location, setLocation] = useState(data.basicInfo?.location || "");
-  const [businessName, setBusinessName] = useState(data.basicInfo?.businessName || "");
-  const [bio, setBio] = useState(data.basicInfo?.bio || "");
+export default function StepBasicInfo({ data = {}, update }) {
+  const { user, upgradeToProvider } = useAuth();
+
+  const [providerName, setProviderName] = useState(
+    data.basicInfo?.providerName || user?.name || ""
+  );
+  const [email, setEmail] = useState(
+    data.basicInfo?.email || user?.email || ""
+  );
+  const [phone, setPhone] = useState(
+    data.basicInfo?.phone || user?.phone || ""
+  );
+  const [loading, setLoading] = useState(false);
   const [errors, setErrors] = useState({});
+  const [apiError, setApiError] = useState("");
 
   useEffect(() => {
-    setProviderName(data.basicInfo?.providerName || "");
-    setEmail(data.basicInfo?.email || "");
-    setPhone(data.basicInfo?.phone || "");
-    setLocation(data.basicInfo?.location || "");
-    setBusinessName(data.basicInfo?.businessName || "");
-    setBio(data.basicInfo?.bio || "");
-  }, [data.basicInfo]);
+    setProviderName(data.basicInfo?.providerName || user?.name || "");
+    setEmail(data.basicInfo?.email || user?.email || "");
+    setPhone(data.basicInfo?.phone || user?.phone || "");
+  }, [data.basicInfo, user]);
 
   const validate = () => {
     const newErrors = {};
@@ -25,18 +31,34 @@ export default function StepBasicInfo({ next, update, data = {} }) {
     else if (!/\S+@\S+\.\S+/.test(email)) newErrors.email = "Email is invalid.";
     if (!phone.trim()) newErrors.phone = "Phone is required.";
     else if (!/^\d+$/.test(phone.trim())) newErrors.phone = "Phone must contain only numbers.";
-    if (!location.trim()) newErrors.location = "Location is required.";
-    if (!businessName.trim()) newErrors.businessName = "Business Name is required.";
-    if (!bio.trim()) newErrors.bio = "Bio is required.";
 
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;
   };
 
-  const handleNext = () => {
+  const handleCompleteOnboarding = async () => {
     if (!validate()) return;
-    update("basicInfo", { providerName, email, phone, location, businessName, bio });
-    next();
+
+    setLoading(true);
+    setApiError("");
+
+    const payload = { basicInfo: { providerName, email, phone } };
+
+    try {
+      const result = await upgradeToProvider(payload);
+
+      if (!result.success) {
+        setApiError(result.error?.message || "Failed to complete onboarding.");
+      } else {
+        // update parent form data if needed
+        update("basicInfo", { providerName, email, phone });
+        // redirect handled inside upgradeToProvider
+      }
+    } catch (err) {
+      setApiError(err?.message || "Unexpected error occurred.");
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
@@ -44,6 +66,8 @@ export default function StepBasicInfo({ next, update, data = {} }) {
       <h2 className="text-2xl font-bold mb-6 text-center text-gray-800">
         Basic Information
       </h2>
+
+      {apiError && <p className="text-red-500 text-center mb-4">{apiError}</p>}
 
       <div className="space-y-4">
         <div>
@@ -93,61 +117,17 @@ export default function StepBasicInfo({ next, update, data = {} }) {
           />
           {errors.phone && <p className="text-red-500 text-sm mt-1">{errors.phone}</p>}
         </div>
-
-        <div>
-          <label className="block text-gray-700 font-medium mb-1">Location</label>
-          <input
-            type="text"
-            value={location}
-            onChange={(e) => {
-              setLocation(e.target.value);
-              if (errors.location) setErrors({ ...errors, location: "" });
-            }}
-            className={`w-full border rounded-md px-4 py-2 focus:outline-none focus:ring-2 focus:ring-teal-500 ${
-              errors.location ? "border-red-500" : "border-gray-400"
-            }`}
-          />
-          {errors.location && <p className="text-red-500 text-sm mt-1">{errors.location}</p>}
-        </div>
-
-        <div>
-          <label className="block text-gray-700 font-medium mb-1">Business Name</label>
-          <input
-            type="text"
-            value={businessName}
-            onChange={(e) => {
-              setBusinessName(e.target.value);
-              if (errors.businessName) setErrors({ ...errors, businessName: "" });
-            }}
-            className={`w-full border rounded-md px-4 py-2 focus:outline-none focus:ring-2 focus:ring-teal-500 ${
-              errors.businessName ? "border-red-500" : "border-gray-400"
-            }`}
-          />
-          {errors.businessName && <p className="text-red-500 text-sm mt-1">{errors.businessName}</p>}
-        </div>
-
-        <div>
-          <label className="block text-gray-700 font-medium mb-1">About / Bio</label>
-          <textarea
-            value={bio}
-            onChange={(e) => {
-              setBio(e.target.value);
-              if (errors.bio) setErrors({ ...errors, bio: "" });
-            }}
-            className={`w-full border rounded-md px-4 py-2 h-28 focus:outline-none focus:ring-2 focus:ring-teal-500 resize-none ${
-              errors.bio ? "border-red-500" : "border-gray-400"
-            }`}
-          />
-          {errors.bio && <p className="text-red-500 text-sm mt-1">{errors.bio}</p>}
-        </div>
       </div>
 
       <div className="mt-6 flex justify-end">
         <button
-          onClick={handleNext}
-          className="bg-teal-600 hover:bg-teal-700 text-white px-6 py-2 rounded-md transition"
+          onClick={handleCompleteOnboarding}
+          disabled={loading}
+          className={`bg-teal-600 hover:bg-teal-700 text-white px-6 py-2 rounded-md transition ${
+            loading ? "opacity-70 cursor-not-allowed" : ""
+          }`}
         >
-          Next
+          {loading ? "Processing..." : "Complete Onboarding"}
         </button>
       </div>
     </div>

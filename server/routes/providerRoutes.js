@@ -1,3 +1,4 @@
+// routes/providerRoutes.js
 import express from "express";
 import multer from "multer";
 import Provider from "../models/Provider.js";
@@ -38,141 +39,117 @@ const upload = multer({ storage, limits: { fileSize: 5 * 1024 * 1024 } });
 /* -------------------------------------------------------------------------- */
 /*                                  TEST ROUTE                                */
 /* -------------------------------------------------------------------------- */
-router.get("/test", (req, res) => res.json({ message: "Provider route works!" }));
+
+router.get("/test", (req, res) => {
+  res.json({ message: "Provider route works!" });
+});
 
 /* -------------------------------------------------------------------------- */
 /*                         POST /api/providers/onboard                        */
+/*                         BASIC INFO ONLY                                   */
 /* -------------------------------------------------------------------------- */
-router.post(
-  "/onboard",
-  protect(),
-  upload.fields([
-    { name: "photo", maxCount: 1 },
-    { name: "files", maxCount: 10 },
-  ]),
-  async (req, res) => {
+
+router.post("/onboard", protect(), async (req, res) => {
+  try {
+    let info = {};
+
     try {
-      let info = {};
-      let services = [];
-
-      try {
-        info = typeof req.body.basicInfo === "string" ? JSON.parse(req.body.basicInfo) : req.body;
-        services = typeof req.body.services === "string" ? JSON.parse(req.body.services) : req.body.services || [];
-      } catch {
-        return res.status(400).json({ message: "Invalid JSON format" });
-      }
-
-      // Upload profile photo
-      let photoURL = "";
-      if (req.files?.photo?.[0]) {
-        const result = await uploadBuffer(req.files.photo[0].buffer, "proxify/profile");
-        photoURL = result.secure_url;
-      }
-
-      // Upload documents
-      const documents = [];
-      if (req.files?.files) {
-        for (const file of req.files.files) {
-          const result = await uploadBuffer(file.buffer, "proxify/documents");
-          documents.push({
-            name: file.originalname,
-            path: result.secure_url,
-            size: file.size,
-            type: file.mimetype,
-          });
-        }
-      }
-
-      // Check for existing provider
-      let provider = await Provider.findOne({ user: req.user._id });
-
-      if (!provider) {
-        provider = await Provider.create({
-          user: req.user._id,
-          basicInfo: {
-            providerName: info.providerName,
-            email: info.email,
-            phone: info.phone,
-            businessName: info.businessName,
-            bio: info.bio,
-            location: info.location,
-            photoURL,
-          },
-          services: services.map((s) => ({
-            name: s.name,
-            price: Number(s.price) || 0,
-            description: s.description || "",
-          })),
-          documents,
-          location: {
-            type: "Point",
-            coordinates: [info.lng ? Number(info.lng) : 0, info.lat ? Number(info.lat) : 0],
-          },
-          status: "approved",
-          rating: 0,
-          reviewCount: 0,
-          availabilityStatus: "Offline",
-        });
-      } else {
-        provider.basicInfo = {
-          ...provider.basicInfo,
-          providerName: info.providerName ?? provider.basicInfo.providerName,
-          email: info.email ?? provider.basicInfo.email,
-          phone: info.phone ?? provider.basicInfo.phone,
-          businessName: info.businessName ?? provider.basicInfo.businessName,
-          bio: info.bio ?? provider.basicInfo.bio,
-          location: info.location ?? provider.basicInfo.location,
-          photoURL: photoURL || provider.basicInfo.photoURL,
-        };
-
-        if (services.length > 0) {
-          provider.services = services.map((s) => ({
-            name: s.name,
-            price: Number(s.price) || 0,
-            description: s.description || "",
-          }));
-        }
-
-        if (documents.length > 0) {
-          provider.documents.push(...documents);
-        }
-
-        if (info.lat || info.lng) {
-          provider.location.coordinates = [
-            info.lng ? Number(info.lng) : provider.location.coordinates[0],
-            info.lat ? Number(info.lat) : provider.location.coordinates[1],
-          ];
-        }
-
-        await provider.save();
-      }
-
-      // Upgrade user role if needed
-      const updatedUser = await User.findById(req.user._id);
-      if (updatedUser.role !== "provider") {
-        updatedUser.role = "provider";
-        await updatedUser.save();
-      }
-
-      const token = jwt.sign({ id: updatedUser._id, role: updatedUser.role }, process.env.JWT_SECRET, {
-        expiresIn: "7d",
-      });
-
-      res.status(201).json({ provider, token });
-    } catch (err) {
-      console.error("ONBOARD ERROR:", err);
-      res.status(500).json({ message: err.message });
+      info =
+        typeof req.body.basicInfo === "string"
+          ? JSON.parse(req.body.basicInfo)
+          : req.body.basicInfo || {};
+    } catch {
+      return res.status(400).json({ message: "Invalid JSON format for basicInfo" });
     }
+
+    if (!info.providerName || !info.email || !info.phone) {
+      return res.status(400).json({
+        message: "Provider name, email, and phone are required",
+      });
+    }
+
+    let provider = await Provider.findOne({ user: req.user._id });
+
+    if (!provider) {
+      provider = await Provider.create({
+        user: req.user._id,
+        basicInfo: {
+          providerName: info.providerName,
+          email: info.email,
+          phone: info.phone,
+          businessName: info.businessName || "",
+          bio: info.bio || "",
+          location: info.location || "",
+          photoURL: "",
+        },
+        services: [],
+        documents: [],
+        location: {
+          type: "Point",
+          coordinates: [0, 0],
+        },
+        status: "approved",
+        availabilityStatus: "Offline",
+        rating: 0,
+        reviewCount: 0,
+      });
+    } else {
+      provider.basicInfo = {
+        ...provider.basicInfo,
+        providerName: info.providerName ?? provider.basicInfo.providerName,
+        email: info.email ?? provider.basicInfo.email,
+        phone: info.phone ?? provider.basicInfo.phone,
+        businessName: info.businessName ?? provider.basicInfo.businessName,
+        bio: info.bio ?? provider.basicInfo.bio,
+        location: info.location ?? provider.basicInfo.location,
+      };
+
+      await provider.save();
+    }
+
+    const updatedUser = await User.findById(req.user._id);
+    if (!updatedUser) {
+      return res.status(404).json({ message: "User not found" });
+    }
+
+    if (updatedUser.role !== "provider") {
+      updatedUser.role = "provider";
+      await updatedUser.save();
+    }
+
+    const token = jwt.sign(
+      { id: updatedUser._id, role: updatedUser.role },
+      process.env.JWT_SECRET,
+      { expiresIn: "7d" }
+    );
+
+    return res.status(201).json({
+      provider,
+      token,
+      onboardComplete: true,
+    });
+  } catch (err) {
+    console.error("ONBOARD ERROR:", err);
+    return res.status(500).json({ message: err.message });
   }
-);
+});
 
 /* -------------------------------------------------------------------------- */
 /*                       GET ALL APPROVED PROVIDERS                           */
 /* -------------------------------------------------------------------------- */
+
 router.get("/", async (req, res) => {
   try {
-    const providers = await Provider.find({ status: "approved" }).populate("user", "-password").lean();
-    res.json(providers);
+    const providers = await Provider.find({ status: "approved" })
+      .populate("user", "-password")
+      .lean();
+
+    const result = providers.map((p) => ({
+      ...p,
+      approvedBadge: p.status === "approved" ? "Approved" : "Not Approved",
+    }));
+
+    res.json(result);
   } catch (err) {
     console.error("GET PROVIDERS ERROR:", err);
     res.status(500).json({ message: "Failed to fetch providers" });
@@ -182,6 +159,7 @@ router.get("/", async (req, res) => {
 /* -------------------------------------------------------------------------- */
 /*                        GET Logged-in Provider Profile                      */
 /* -------------------------------------------------------------------------- */
+
 router.get("/me", protect("provider"), async (req, res) => {
   try {
     const provider = await Provider.findOne({ user: req.user._id }).lean();
@@ -195,7 +173,9 @@ router.get("/me", protect("provider"), async (req, res) => {
 
 /* -------------------------------------------------------------------------- */
 /*                          UPDATE Provider Profile                           */
+/*                          FULL SETTINGS ONLY                               */
 /* -------------------------------------------------------------------------- */
+
 router.put(
   "/update",
   protect("provider"),
@@ -212,8 +192,15 @@ router.put(
       let services = [];
 
       try {
-        info = typeof req.body.basicInfo === "string" ? JSON.parse(req.body.basicInfo) : req.body;
-        services = typeof req.body.services === "string" ? JSON.parse(req.body.services) : req.body.services || [];
+        info =
+          typeof req.body.basicInfo === "string"
+            ? JSON.parse(req.body.basicInfo)
+            : req.body.basicInfo || {};
+
+        services =
+          typeof req.body.services === "string"
+            ? JSON.parse(req.body.services)
+            : req.body.services || [];
       } catch {
         return res.status(400).json({ message: "Invalid JSON format" });
       }
@@ -228,16 +215,20 @@ router.put(
         location: info.location ?? provider.basicInfo.location,
       };
 
-      // Upload new profile photo
       if (req.files?.photo?.[0]) {
-        const result = await uploadBuffer(req.files.photo[0].buffer, "proxify/profile");
+        const result = await uploadBuffer(
+          req.files.photo[0].buffer,
+          "proxify/profile"
+        );
         provider.basicInfo.photoURL = result.secure_url;
       }
 
-      // Upload new documents
-      if (req.files?.files) {
+      if (req.files?.files?.length > 0) {
         for (const file of req.files.files) {
-          const result = await uploadBuffer(file.buffer, "proxify/documents");
+          const result = await uploadBuffer(
+            file.buffer,
+            "proxify/documents"
+          );
           provider.documents.push({
             name: file.originalname,
             path: result.secure_url,
@@ -247,8 +238,7 @@ router.put(
         }
       }
 
-      // Update services
-      if (services.length > 0) {
+      if (Array.isArray(services) && services.length > 0) {
         provider.services = services.map((s) => ({
           name: s.name,
           price: Number(s.price) || 0,
@@ -256,12 +246,11 @@ router.put(
         }));
       }
 
-      // Update location
-      if (info.lat || info.lng) {
-        provider.location.coordinates = [
-          info.lng ? Number(info.lng) : provider.location.coordinates[0],
-          info.lat ? Number(info.lat) : provider.location.coordinates[1],
-        ];
+      if (info.lat !== undefined && info.lng !== undefined) {
+        provider.location = {
+          type: "Point",
+          coordinates: [Number(info.lng), Number(info.lat)],
+        };
       }
 
       await provider.save();
@@ -276,6 +265,7 @@ router.put(
 /* -------------------------------------------------------------------------- */
 /*                      GET Public Provider Profile by ID                     */
 /* -------------------------------------------------------------------------- */
+
 router.get("/:id", async (req, res) => {
   try {
     const provider = await Provider.findById(req.params.id).lean();
