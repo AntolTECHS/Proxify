@@ -23,14 +23,13 @@ export default function CustomerProfile() {
       return;
     }
 
-    // 🔒 API call goes here
     console.log("Updated profile:", form);
     alert("Profile updated (API hookup pending)");
   };
 
   return (
     <div className="max-w-2xl">
-      <h1 className="text-3xl font-bold mb-6" style={{ color: "#0ea5e9" }}>
+      <h1 className="text-3xl font-bold mb-6 text-teal-600">
         Profile & Settings
       </h1>
 
@@ -40,35 +39,35 @@ export default function CustomerProfile() {
       >
         {/* NAME */}
         <div>
-          <label className="block mb-1" style={{ color: "#0ea5e9" }}>
+          <label className="block mb-1 text-teal-600">
             Full Name
           </label>
           <input
             name="name"
             value={form.name}
             onChange={handleChange}
-            className="w-full border rounded-lg p-3"
-            style={{ borderColor: "#0ea5e9" }}
+            className="w-full border rounded-lg p-3 focus:outline-none focus:ring-2 focus:ring-teal-600 focus:border-teal-600"
+            style={{ borderColor: "#0d9488" }}
             required
           />
         </div>
 
         {/* EMAIL (READ ONLY) */}
         <div>
-          <label className="block mb-1" style={{ color: "#0ea5e9" }}>
+          <label className="block mb-1 text-teal-600">
             Email
           </label>
           <input
             value={form.email}
             disabled
             className="w-full border rounded-lg p-3 bg-gray-100 cursor-not-allowed"
-            style={{ borderColor: "#0ea5e9" }}
+            style={{ borderColor: "#0d9488" }}
           />
         </div>
 
         {/* PASSWORD */}
         <div>
-          <label className="block mb-1" style={{ color: "#0ea5e9" }}>
+          <label className="block mb-1 text-teal-600">
             New Password <span className="text-gray-400">(optional)</span>
           </label>
           <input
@@ -77,14 +76,14 @@ export default function CustomerProfile() {
             placeholder="Leave blank to keep current password"
             value={form.password}
             onChange={handleChange}
-            className="w-full border rounded-lg p-3"
-            style={{ borderColor: "#0ea5e9" }}
+            className="w-full border rounded-lg p-3 focus:outline-none focus:ring-2 focus:ring-teal-600 focus:border-teal-600"
+            style={{ borderColor: "#0d9488" }}
           />
         </div>
 
         {/* CONFIRM PASSWORD */}
         <div>
-          <label className="block mb-1" style={{ color: "#0ea5e9" }}>
+          <label className="block mb-1 text-teal-600">
             Confirm Password
           </label>
           <input
@@ -92,8 +91,8 @@ export default function CustomerProfile() {
             name="confirmPassword"
             value={form.confirmPassword}
             onChange={handleChange}
-            className="w-full border rounded-lg p-3"
-            style={{ borderColor: "#0ea5e9" }}
+            className="w-full border rounded-lg p-3 focus:outline-none focus:ring-2 focus:ring-teal-600 focus:border-teal-600"
+            style={{ borderColor: "#0d9488" }}
           />
         </div>
 
@@ -101,10 +100,7 @@ export default function CustomerProfile() {
         <div className="flex gap-4 pt-4">
           <button
             type="submit"
-            className="px-6 py-3 rounded-lg text-white transition"
-            style={{ backgroundColor: "#0ea5e9" }}
-            onMouseOver={(e) => (e.currentTarget.style.backgroundColor = "#0284c7")}
-            onMouseOut={(e) => (e.currentTarget.style.backgroundColor = "#0ea5e9")}
+            className="px-6 py-3 rounded-lg text-white transition bg-teal-600 hover:bg-teal-700"
           >
             Save Changes
           </button>

@@ -1,50 +1,88 @@
 const User = require("../models/User");
 const Booking = require("../models/Booking");
+const Service = require("../models/Service");
 
 /* ======================================================
    HELPER: Ensure admin access
 ====================================================== */
 const checkAdmin = (req, res) => {
   if (!req.user || req.user.role !== "admin") {
-    res.status(403).json({ message: "Access denied" });
+    res.status(403).json({ success: false, message: "Access denied" });
     return false;
   }
   return true;
 };
 
 /* ======================================================
-   GET ALL USERS (ADMIN)
+   DASHBOARD SUMMARY
+====================================================== */
+exports.getSummary = async (req, res) => {
+  if (!checkAdmin(req, res)) return;
+
+  try {
+    const [
+      totalUsers,
+      totalProviders,
+      totalBookings,
+      totalServices,
+      pendingProviders,
+      pendingBookings,
+    ] = await Promise.all([
+      User.countDocuments(),
+      User.countDocuments({ role: "provider" }),
+      Booking.countDocuments(),
+      Service.countDocuments(),
+      User.countDocuments({ role: "provider", verificationStatus: "pending" }),
+      Booking.countDocuments({ status: "pending" }),
+    ]);
+
+    res.json({
+      success: true,
+      summary: {
+        totalUsers,
+        totalProviders,
+        totalBookings,
+        totalServices,
+        pendingProviders,
+        pendingBookings,
+      },
+    });
+  } catch (error) {
+    console.error("Summary error:", error);
+    res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+/* ======================================================
+   USERS
 ====================================================== */
 exports.getAllUsers = async (req, res) => {
   if (!checkAdmin(req, res)) return;
 
   try {
     const users = await User.find().select("-password");
-    res.json(users);
+    res.json({ success: true, users });
   } catch (error) {
-    res.status(500).json({ message: error.message });
+    console.error("Users error:", error);
+    res.status(500).json({ success: false, message: error.message });
   }
 };
 
 /* ======================================================
-   GET ALL BOOKINGS (ADMIN)
+   PROVIDERS
 ====================================================== */
-exports.getAllBookings = async (req, res) => {
+exports.getProviders = async (req, res) => {
   if (!checkAdmin(req, res)) return;
 
   try {
-    const bookings = await Booking.find()
-      .populate("service provider customer", "name email")
-      .sort({ createdAt: -1 });
-    res.json(bookings);
+    const providers = await User.find({ role: "provider" }).select("-password");
+    res.json({ success: true, providers });
   } catch (error) {
-    res.status(500).json({ message: error.message });
+    console.error("Providers error:", error);
+    res.status(500).json({ success: false, message: error.message });
   }
 };
 
-/* ======================================================
-   GET ALL PENDING PROVIDERS
-====================================================== */
 exports.getPendingProviders = async (req, res) => {
   if (!checkAdmin(req, res)) return;
 
@@ -53,9 +91,11 @@ exports.getPendingProviders = async (req, res) => {
       role: "provider",
       verificationStatus: "pending",
     }).select("-password");
-    res.json(providers);
+
+    res.json({ success: true, providers });
   } catch (error) {
-    res.status(500).json({ message: error.message });
+    console.error("Pending providers error:", error);
+    res.status(500).json({ success: false, message: error.message });
   }
 };
 
@@ -69,27 +109,24 @@ exports.approveProvider = async (req, res) => {
     const provider = await User.findById(req.params.id);
 
     if (!provider || provider.role !== "provider") {
-      return res.status(404).json({ message: "Provider not found" });
+      return res.status(404).json({ success: false, message: "Provider not found" });
     }
 
     provider.isVerified = true;
     provider.verificationStatus = "approved";
+    provider.verificationNotes = "";
     provider.verifiedAt = new Date();
 
     await provider.save();
 
     res.json({
-      message: "Provider approved successfully",
-      provider: {
-        id: provider._id,
-        name: provider.name,
-        email: provider.email,
-        isVerified: provider.isVerified,
-        verificationStatus: provider.verificationStatus,
-      },
+      success: true,
+      message: "Provider approved",
+      provider,
     });
   } catch (error) {
-    res.status(500).json({ message: error.message });
+    console.error("Approve provider error:", error);
+    res.status(500).json({ success: false, message: error.message });
   }
 };
 
@@ -100,33 +137,141 @@ exports.rejectProvider = async (req, res) => {
   if (!checkAdmin(req, res)) return;
 
   try {
-    const { reason } = req.body;
-    if (!reason) return res.status(400).json({ message: "Rejection reason is required" });
+    const { notes } = req.body; // ✅ FIXED (was reason)
+
+    if (!notes || !notes.trim()) {
+      return res.status(400).json({
+        success: false,
+        message: "Rejection reason is required",
+      });
+    }
 
     const provider = await User.findById(req.params.id);
 
     if (!provider || provider.role !== "provider") {
-      return res.status(404).json({ message: "Provider not found" });
+      return res.status(404).json({ success: false, message: "Provider not found" });
     }
 
     provider.isVerified = false;
     provider.verificationStatus = "rejected";
-    provider.verificationNotes = reason;
+    provider.verificationNotes = notes.trim();
+    provider.verifiedAt = null;
 
     await provider.save();
 
     res.json({
-      message: "Provider rejected successfully",
-      provider: {
-        id: provider._id,
-        name: provider.name,
-        email: provider.email,
-        isVerified: provider.isVerified,
-        verificationStatus: provider.verificationStatus,
-        verificationNotes: provider.verificationNotes,
-      },
+      success: true,
+      message: "Provider rejected",
+      provider,
     });
   } catch (error) {
-    res.status(500).json({ message: error.message });
+    console.error("Reject provider error:", error);
+    res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+/* ======================================================
+   BOOKINGS
+====================================================== */
+exports.getAllBookings = async (req, res) => {
+  if (!checkAdmin(req, res)) return;
+
+  try {
+    const bookings = await Booking.find()
+      .populate("service", "name cost")
+      .populate("provider", "name email")
+      .populate("customer", "name email")
+      .sort({ createdAt: -1 });
+
+    res.json({ success: true, bookings });
+  } catch (error) {
+    console.error("Bookings error:", error);
+    res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+exports.updateBookingStatus = async (req, res) => {
+  if (!checkAdmin(req, res)) return;
+
+  try {
+    const { status } = req.body;
+
+    const validStatuses = ["pending", "accepted", "completed", "cancelled"];
+
+    if (!validStatuses.includes(status)) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid status",
+      });
+    }
+
+    const booking = await Booking.findById(req.params.id);
+
+    if (!booking) {
+      return res.status(404).json({
+        success: false,
+        message: "Booking not found",
+      });
+    }
+
+    booking.status = status;
+    await booking.save();
+
+    res.json({
+      success: true,
+      message: "Booking updated",
+      booking,
+    });
+  } catch (error) {
+    console.error("Update booking error:", error);
+    res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+exports.deleteBooking = async (req, res) => {
+  if (!checkAdmin(req, res)) return;
+
+  try {
+    await Booking.findByIdAndDelete(req.params.id);
+
+    res.json({
+      success: true,
+      message: "Booking deleted",
+    });
+  } catch (error) {
+    console.error("Delete booking error:", error);
+    res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+/* ======================================================
+   ANALYTICS
+====================================================== */
+exports.getBookingAnalytics = async (req, res) => {
+  if (!checkAdmin(req, res)) return;
+
+  try {
+    const stats = await Booking.aggregate([
+      {
+        $group: {
+          _id: {
+            $dateToString: { format: "%Y-%m-%d", date: "$createdAt" },
+          },
+          count: { $sum: 1 },
+        },
+      },
+      { $sort: { _id: 1 } },
+    ]);
+
+    res.json({
+      success: true,
+      data: stats.map((s) => ({
+        date: s._id,
+        count: s.count,
+      })),
+    });
+  } catch (error) {
+    console.error("Analytics error:", error);
+    res.status(500).json({ success: false, message: error.message });
   }
 };

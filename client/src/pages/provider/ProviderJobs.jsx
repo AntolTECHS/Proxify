@@ -6,6 +6,13 @@ import Chat from "../../components/Chat/Chat.jsx";
 
 const API = import.meta.env.VITE_API_URL || "http://localhost:5000/api";
 
+const formatKES = (amount) =>
+  new Intl.NumberFormat("en-KE", {
+    style: "currency",
+    currency: "KES",
+    maximumFractionDigits: 0,
+  }).format(Number(amount || 0));
+
 export default function ProviderJobs() {
   const { token } = useAuth();
 
@@ -160,7 +167,7 @@ export default function ProviderJobs() {
                     <strong>Location:</strong> {modalJob.location}
                   </p>
                   <p>
-                    <strong>Price:</strong> ${modalJob.price}
+                    <strong>Price:</strong> {formatKES(modalJob.price)}
                   </p>
                   <p>
                     <strong>Status:</strong>{" "}

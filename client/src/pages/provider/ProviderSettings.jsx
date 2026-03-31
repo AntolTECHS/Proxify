@@ -1,6 +1,12 @@
 // ProviderSettings.jsx
 import { useState, useEffect, useRef } from "react";
-import { FaUser, FaMapMarkerAlt, FaCamera, FaFileAlt, FaSearch } from "react-icons/fa";
+import {
+  FaUser,
+  FaMapMarkerAlt,
+  FaCamera,
+  FaFileAlt,
+  FaSearch,
+} from "react-icons/fa";
 import { MapContainer, TileLayer, Marker, useMap } from "react-leaflet";
 import L from "leaflet";
 import { geocodingClient } from "../../utils/mapboxClient";
@@ -17,12 +23,19 @@ L.Icon.Default.mergeOptions({
   shadowUrl: markerShadow,
 });
 
+const FALLBACK_LAT = -1.286389;
+const FALLBACK_LNG = 36.817223;
+
 // ---------------- RecenterMap ----------------
 function RecenterMap({ lat, lng }) {
   const map = useMap();
+
   useEffect(() => {
-    if (lat != null && lng != null) map.setView([lat, lng], 15);
-  }, [lat, lng]);
+    if (lat != null && lng != null) {
+      map.setView([lat, lng], 15);
+    }
+  }, [lat, lng, map]);
+
   return null;
 }
 
@@ -47,60 +60,98 @@ export default function ProviderSettings() {
       photoURL: "",
       photoFile: null,
     },
-    lat: -1.286389, // default Nairobi
-    lng: 36.817223,
+    lat: FALLBACK_LAT,
+    lng: FALLBACK_LNG,
     services: [],
     documents: [],
-    locationGeoJSON: { type: "Point", coordinates: [36.817223, -1.286389] }
+    locationGeoJSON: { type: "Point", coordinates: [FALLBACK_LNG, FALLBACK_LAT] },
   });
 
   // ---------------- Fetch Profile ----------------
   useEffect(() => {
     fetchProfile();
+    return () => searchTimeout.current && clearTimeout(searchTimeout.current);
   }, []);
 
   const fetchProfile = async () => {
     try {
       setLoading(true);
+      setErrorMsg("");
+
       const token = localStorage.getItem("token");
+      if (!token) throw new Error("Please log in again.");
+
       const res = await fetch("http://localhost:5000/api/providers/me", {
         headers: { Authorization: `Bearer ${token}` },
       });
+
+      if (res.status === 401) {
+        localStorage.removeItem("token");
+        throw new Error("Session expired. Please log in again.");
+      }
+
+      if (!res.ok) {
+        const errData = await res.json().catch(() => ({}));
+        throw new Error(errData.message || "Failed to load profile");
+      }
+
       const data = await res.json();
 
-      let lat = data.location?.coordinates?.[1];
-      let lng = data.location?.coordinates?.[0];
+      const basicInfo = {
+        providerName: data?.basicInfo?.providerName || "",
+        email: data?.basicInfo?.email || "",
+        phone: data?.basicInfo?.phone || "",
+        businessName: data?.basicInfo?.businessName || "",
+        bio: data?.basicInfo?.bio || "",
+        location: data?.basicInfo?.location || "",
+        photoURL: data?.basicInfo?.photoURL || "",
+        photoFile: null,
+      };
 
-      // If invalid coordinates, forward geocode the human-readable location
-      if (!lat || !lng || (lat === 0 && lng === 0)) {
-        if (data.basicInfo?.location) {
-          try {
-            const geoRes = await geocodingClient
-              .forwardGeocode({ query: data.basicInfo.location, limit: 1 })
-              .send();
-            const feature = geoRes.body.features[0];
-            if (feature) {
-              lat = feature.center[1];
-              lng = feature.center[0];
-            }
-          } catch {
-            lat = -1.286389;
-            lng = 36.817223;
+      const services = Array.isArray(data?.services) ? data.services : [];
+      const documents = Array.isArray(data?.documents)
+        ? data.documents.map((d) => ({ ...d, file: null }))
+        : [];
+
+      let lat = data?.location?.coordinates?.[1];
+      let lng = data?.location?.coordinates?.[0];
+
+      const validCoords = Number.isFinite(lat) && Number.isFinite(lng) && !(lat === 0 && lng === 0);
+
+      if (!validCoords && basicInfo.location) {
+        try {
+          const geoRes = await geocodingClient
+            .forwardGeocode({ query: basicInfo.location, limit: 1 })
+            .send();
+          const feature = geoRes?.body?.features?.[0];
+          if (feature?.center?.length === 2) {
+            lng = feature.center[0];
+            lat = feature.center[1];
           }
+        } catch {
+          lat = FALLBACK_LAT;
+          lng = FALLBACK_LNG;
         }
       }
 
+      if (!Number.isFinite(lat) || !Number.isFinite(lng)) {
+        lat = FALLBACK_LAT;
+        lng = FALLBACK_LNG;
+      }
+
       setProfile({
-        ...data,
+        basicInfo,
         lat,
         lng,
+        services,
+        documents,
         locationGeoJSON: { type: "Point", coordinates: [lng, lat] },
-        documents: data.documents?.map(d => ({ ...d, file: null })) || [],
-        basicInfo: { ...data.basicInfo, photoFile: null },
       });
-      setSearchQuery(data.basicInfo.location || "");
-    } catch {
-      setErrorMsg("Failed to load profile");
+
+      setSearchQuery(basicInfo.location);
+    } catch (err) {
+      console.error("FETCH PROFILE ERROR:", err);
+      setErrorMsg(err.message || "Failed to load profile");
     } finally {
       setLoading(false);
     }
@@ -110,20 +161,21 @@ export default function ProviderSettings() {
   const handleSave = async () => {
     try {
       setLoading(true);
+      setErrorMsg("");
+
       const token = localStorage.getItem("token");
+      if (!token) throw new Error("Please log in again.");
+
       const formData = new FormData();
+      const { photoFile, ...basicInfo } = profile.basicInfo;
 
-      formData.append("basicInfo", JSON.stringify(profile.basicInfo));
-      formData.append("services", JSON.stringify(profile.services));
+      formData.append("basicInfo", JSON.stringify(basicInfo));
+      formData.append("services", JSON.stringify(profile.services || []));
+      formData.append("lat", String(profile.lat));
+      formData.append("lng", String(profile.lng));
 
-      // Save lat/lng as GeoJSON
-      formData.append("location", JSON.stringify({
-        type: "Point",
-        coordinates: [profile.lng, profile.lat]
-      }));
-
-      if (profile.basicInfo.photoFile) formData.append("photo", profile.basicInfo.photoFile);
-      profile.documents.filter(d => d.file).forEach(doc => formData.append("files", doc.file));
+      if (photoFile) formData.append("photo", photoFile);
+      (profile.documents || []).filter((d) => d.file).forEach((d) => formData.append("files", d.file));
 
       const res = await fetch("http://localhost:5000/api/providers/update", {
         method: "PUT",
@@ -131,21 +183,47 @@ export default function ProviderSettings() {
         body: formData,
       });
 
-      const updated = await res.json();
+      if (res.status === 401) {
+        localStorage.removeItem("token");
+        throw new Error("Session expired. Please log in again.");
+      }
+
+      const updated = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(updated.message || "Save failed");
+
+      const updatedLat = updated?.location?.coordinates?.[1];
+      const updatedLng = updated?.location?.coordinates?.[0];
+
       setProfile({
-        ...updated,
-        lat: updated.location?.coordinates?.[1] ?? profile.lat,
-        lng: updated.location?.coordinates?.[0] ?? profile.lng,
-        locationGeoJSON: updated.location ?? profile.locationGeoJSON,
-        documents: updated.documents?.map(d => ({ ...d, file: null })) || [],
-        basicInfo: { ...updated.basicInfo, photoFile: null },
+        basicInfo: {
+          providerName: updated?.basicInfo?.providerName || "",
+          email: updated?.basicInfo?.email || "",
+          phone: updated?.basicInfo?.phone || "",
+          businessName: updated?.basicInfo?.businessName || "",
+          bio: updated?.basicInfo?.bio || "",
+          location: updated?.basicInfo?.location || "",
+          photoURL: updated?.basicInfo?.photoURL || "",
+          photoFile: null,
+        },
+        lat: Number.isFinite(updatedLat) && !(updatedLat === 0 && updatedLng === 0)
+          ? updatedLat
+          : profile.lat,
+        lng: Number.isFinite(updatedLng) && !(updatedLat === 0 && updatedLng === 0)
+          ? updatedLng
+          : profile.lng,
+        services: Array.isArray(updated?.services) ? updated.services : [],
+        documents: Array.isArray(updated?.documents)
+          ? updated.documents.map((d) => ({ ...d, file: null }))
+          : [],
+        locationGeoJSON: updated?.location || profile.locationGeoJSON,
       });
 
       setEditing(false);
       setSuccessMsg("Saved successfully");
       setTimeout(() => setSuccessMsg(""), 2500);
-    } catch {
-      setErrorMsg("Save failed");
+    } catch (err) {
+      console.error("SAVE ERROR:", err);
+      setErrorMsg(err.message || "Save failed");
     } finally {
       setLoading(false);
     }
@@ -154,21 +232,22 @@ export default function ProviderSettings() {
   // ---------------- Mapbox Autocomplete ----------------
   const handleSearchChange = (value) => {
     setSearchQuery(value);
+
     if (searchTimeout.current) clearTimeout(searchTimeout.current);
 
     searchTimeout.current = setTimeout(async () => {
       if (!value) return setSuggestions([]);
 
       try {
-        const response = await geocodingClient
+        const res = await geocodingClient
           .forwardGeocode({
             query: value,
             limit: 10,
             countries: ["ke"],
-            types: ["region","place","locality","neighborhood","address"]
+            types: ["region", "place", "locality", "neighborhood", "address"],
           })
           .send();
-        setSuggestions(response.body.features);
+        setSuggestions(res?.body?.features || []);
       } catch {
         setSuggestions([]);
       }
@@ -176,49 +255,66 @@ export default function ProviderSettings() {
   };
 
   const selectSuggestion = (place) => {
-    setProfile(prev => ({
+    const lng = place?.center?.[0];
+    const lat = place?.center?.[1];
+    if (!Number.isFinite(lat) || !Number.isFinite(lng)) return;
+
+    setProfile((prev) => ({
       ...prev,
-      lat: place.center[1],
-      lng: place.center[0],
-      locationGeoJSON: { type: "Point", coordinates: [place.center[0], place.center[1]] },
-      basicInfo: { ...prev.basicInfo, location: place.place_name }
+      lat,
+      lng,
+      locationGeoJSON: { type: "Point", coordinates: [lng, lat] },
+      basicInfo: { ...prev.basicInfo, location: place.place_name || "" },
     }));
-    setSearchQuery(place.place_name);
+    setSearchQuery(place.place_name || "");
     setSuggestions([]);
   };
 
   // ---------------- Services ----------------
-  const addService = () => setProfile(prev => ({
-    ...prev,
-    services: [...prev.services, { name: "", price: "", description: "" }]
-  }));
+  const addService = () =>
+    setProfile((prev) => ({
+      ...prev,
+      services: [...(prev.services || []), { name: "", price: "", description: "" }],
+    }));
 
   const updateService = (i, field, value) => {
-    const updated = [...profile.services];
-    updated[i][field] = field === "price" ? (value === "" ? "" : Number(value)) : value;
-    setProfile(prev => ({ ...prev, services: updated }));
+    setProfile((prev) => {
+      const updated = [...(prev.services || [])];
+      updated[i] = {
+        ...updated[i],
+        [field]: field === "price" ? (value === "" ? "" : Number(value)) : value,
+      };
+      return { ...prev, services: updated };
+    });
   };
 
-  // ---------------- Reverse Geocode on Drag ----------------
+  // ---------------- Documents ----------------
+  const addDocuments = (files) => {
+    const newDocs = Array.from(files || []).map((f) => ({
+      name: f.name,
+      size: f.size,
+      type: f.type,
+      file: f,
+    }));
+    setProfile((prev) => ({ ...prev, documents: [...(prev.documents || []), ...newDocs] }));
+  };
+
+  // ---------------- Reverse Geocode ----------------
   const handleMarkerDrag = async (lat, lng) => {
-    setProfile(prev => ({
+    setProfile((prev) => ({
       ...prev,
       lat,
       lng,
-      locationGeoJSON: { type: "Point", coordinates: [lng, lat] }
+      locationGeoJSON: { type: "Point", coordinates: [lng, lat] },
     }));
 
     try {
-      const res = await geocodingClient.reverseGeocode({
-        query: [lng, lat],
-        limit: 1
-      }).send();
-
-      const feature = res.body.features[0];
-      if (feature) {
-        setProfile(prev => ({
+      const res = await geocodingClient.reverseGeocode({ query: [lng, lat], limit: 1 }).send();
+      const feature = res?.body?.features?.[0];
+      if (feature?.place_name) {
+        setProfile((prev) => ({
           ...prev,
-          basicInfo: { ...prev.basicInfo, location: feature.place_name }
+          basicInfo: { ...prev.basicInfo, location: feature.place_name },
         }));
         setSearchQuery(feature.place_name);
       }
@@ -227,7 +323,6 @@ export default function ProviderSettings() {
     }
   };
 
-  // ---------------- Render ----------------
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-100 to-slate-200 p-6">
       <div className="max-w-6xl mx-auto space-y-6">
@@ -235,7 +330,7 @@ export default function ProviderSettings() {
         <div className="flex justify-between items-center">
           <h1 className="text-3xl font-bold">Provider Settings</h1>
           <button
-            onClick={() => setEditing(!editing)}
+            onClick={() => setEditing((v) => !v)}
             className="bg-sky-600 text-white px-5 py-2 rounded-lg"
           >
             {editing ? "Cancel" : "Edit"}
@@ -245,43 +340,43 @@ export default function ProviderSettings() {
         {successMsg && <div className="bg-green-100 p-3 rounded">{successMsg}</div>}
         {errorMsg && <div className="bg-red-100 p-3 rounded">{errorMsg}</div>}
 
-        {/* Profile */}
+        {/* Profile Section */}
         <Section title="Profile" icon={<FaUser />}>
           <div className="flex items-center gap-6">
             <div className="w-24 h-24 rounded-full overflow-hidden bg-gray-100">
               {profile.basicInfo.photoURL ? (
-                <img src={profile.basicInfo.photoURL} className="w-full h-full object-cover" />
+                <img src={profile.basicInfo.photoURL} alt="Profile" className="w-full h-full object-cover" />
               ) : (
-                <div className="flex items-center justify-center h-full"><FaCamera /></div>
+                <div className="flex items-center justify-center h-full">
+                  <FaCamera />
+                </div>
               )}
             </div>
+
             {editing && (
-              <input type="file" accept="image/*" onChange={e => {
-                const file = e.target.files[0];
-                if (!file) return;
-                setProfile(prev => ({
-                  ...prev,
-                  basicInfo: {
-                    ...prev.basicInfo,
-                    photoFile: file,
-                    photoURL: URL.createObjectURL(file)
-                  }
-                }));
-              }} />
+              <input
+                type="file"
+                accept="image/*"
+                onChange={(e) => {
+                  const file = e.target.files?.[0];
+                  if (!file) return;
+                  setProfile((prev) => ({
+                    ...prev,
+                    basicInfo: { ...prev.basicInfo, photoFile: file, photoURL: URL.createObjectURL(file) },
+                  }));
+                }}
+              />
             )}
           </div>
 
           <div className="grid md:grid-cols-2 gap-4 mt-4">
-            {['providerName','businessName','email','phone','location'].map(field => (
+            {["providerName", "businessName", "email", "phone", "location"].map((field) => (
               <InputField
                 key={field}
                 label={field}
                 value={profile.basicInfo[field]}
                 disabled={!editing}
-                onChange={v => setProfile(prev => ({
-                  ...prev,
-                  basicInfo: { ...prev.basicInfo, [field]: v }
-                }))}
+                onChange={(v) => setProfile((prev) => ({ ...prev, basicInfo: { ...prev.basicInfo, [field]: v } }))}
               />
             ))}
           </div>
@@ -289,53 +384,92 @@ export default function ProviderSettings() {
           <textarea
             value={profile.basicInfo.bio}
             disabled={!editing}
-            onChange={e => setProfile(prev => ({
-              ...prev,
-              basicInfo: { ...prev.basicInfo, bio: e.target.value }
-            }))}
+            onChange={(e) => setProfile((prev) => ({ ...prev, basicInfo: { ...prev.basicInfo, bio: e.target.value } }))}
             className="w-full border p-2 rounded mt-3"
             placeholder="Bio"
           />
         </Section>
 
-        {/* Services */}
+        {/* Services Section */}
         <Section title="Services" icon={<FaFileAlt />}>
-          {profile.services.map((s, i) => (
+          {(profile.services || []).map((s, i) => (
             <div key={i} className="grid md:grid-cols-3 gap-3 mb-3">
-              <InputField label="Name" value={s.name} disabled={!editing} onChange={v => updateService(i, "name", v)} />
-              <InputField label="Price" value={s.price} disabled={!editing} onChange={v => updateService(i, "price", v)} />
-              <InputField label="Description" value={s.description} disabled={!editing} onChange={v => updateService(i, "description", v)} />
+              <InputField label="Name" value={s.name} disabled={!editing} onChange={(v) => updateService(i, "name", v)} />
+              <div>
+                <label className="text-sm capitalize">Price (KSh)</label>
+                <div className="flex items-center border p-2 rounded bg-white">
+                  <span className="text-gray-500 pr-2">KSh</span>
+                  <input
+                    type="number"
+                    min="0"
+                    step="1"
+                    inputMode="numeric"
+                    value={s.price === "" ? "" : s.price}
+                    disabled={!editing}
+                    onChange={(e) => updateService(i, "price", e.target.value)}
+                    className="w-full outline-none bg-transparent"
+                    placeholder="Enter amount"
+                  />
+                </div>
+              </div>
+              <InputField label="Description" value={s.description} disabled={!editing} onChange={(v) => updateService(i, "description", v)} />
             </div>
           ))}
-          {editing && <button onClick={addService} className="bg-green-500 text-white px-4 py-2 rounded">Add Service</button>}
+          {editing && (
+            <button onClick={addService} className="bg-green-500 text-white px-4 py-2 rounded">
+              Add Service
+            </button>
+          )}
         </Section>
 
-        {/* Map */}
+        {/* Documents Section */}
+        <Section title="Documents" icon={<FaFileAlt />}>
+          <div className="space-y-3">
+            {(profile.documents || []).length === 0 ? (
+              <p className="text-sm text-gray-500">No documents uploaded yet.</p>
+            ) : (
+              <div className="space-y-2">
+                {profile.documents.map((doc, idx) => (
+                  <div key={idx} className="flex items-center justify-between border rounded p-3 bg-gray-50">
+                    <div>
+                      <p className="font-medium">{doc.name}</p>
+                      <p className="text-xs text-gray-500">
+                        {doc.type || "File"} • {doc.size ? `${Math.round(doc.size / 1024)} KB` : "Unknown size"}
+                      </p>
+                    </div>
+                    {doc.path && !doc.file && (
+                      <a href={doc.path} target="_blank" rel="noreferrer" className="text-sky-600 text-sm underline">
+                        Open
+                      </a>
+                    )}
+                    {doc.file && <span className="text-xs bg-yellow-100 text-yellow-800 px-2 py-1 rounded">New</span>}
+                  </div>
+                ))}
+              </div>
+            )}
+            {editing && <input type="file" multiple onChange={(e) => addDocuments(e.target.files)} className="block w-full text-sm" />}
+          </div>
+        </Section>
+
+        {/* Map Section */}
         <Section title="Location" icon={<FaMapMarkerAlt />}>
           {editing && (
             <div className="relative mb-3">
               <div className="flex gap-2">
                 <input
                   value={searchQuery}
-                  onChange={e => handleSearchChange(e.target.value)}
+                  onChange={(e) => handleSearchChange(e.target.value)}
                   className="border p-2 w-full rounded"
                   placeholder="Search location"
                 />
-                <button
-                  onClick={() => suggestions[0] && selectSuggestion(suggestions[0])}
-                  className="bg-sky-500 text-white px-4 py-2 rounded flex items-center gap-1"
-                >
+                <button onClick={() => suggestions[0] && selectSuggestion(suggestions[0])} className="bg-sky-500 text-white px-4 py-2 rounded flex items-center gap-1" type="button">
                   <FaSearch /> Search
                 </button>
               </div>
               {suggestions.length > 0 && (
                 <ul className="absolute bg-white border w-full mt-1 max-h-60 overflow-auto z-50 rounded shadow-md">
                   {suggestions.map((place, idx) => (
-                    <li
-                      key={idx}
-                      className="p-2 hover:bg-sky-100 cursor-pointer"
-                      onClick={() => selectSuggestion(place)}
-                    >
+                    <li key={idx} className="p-2 hover:bg-sky-100 cursor-pointer" onClick={() => selectSuggestion(place)}>
                       {place.place_name}
                     </li>
                   ))}
@@ -343,22 +477,16 @@ export default function ProviderSettings() {
               )}
             </div>
           )}
-
           <div className="h-80 rounded overflow-hidden">
             <MapContainer center={[profile.lat, profile.lng]} zoom={13} className="h-full w-full">
-              <TileLayer url="https://{s}.tile.openstreetmap.fr/hot/{z}/{x}/{y}.png" />
+              <TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
               {profile.lat != null && profile.lng != null && (
                 <>
                   <RecenterMap lat={profile.lat} lng={profile.lng} />
                   <Marker
                     position={[profile.lat, profile.lng]}
                     draggable={editing}
-                    eventHandlers={{
-                      dragend: (e) => {
-                        const { lat, lng } = e.target.getLatLng();
-                        handleMarkerDrag(lat, lng);
-                      }
-                    }}
+                    eventHandlers={{ dragend: (e) => handleMarkerDrag(e.target.getLatLng().lat, e.target.getLatLng().lng) }}
                   />
                 </>
               )}
@@ -383,12 +511,7 @@ function InputField({ label, value, onChange, disabled }) {
   return (
     <div>
       <label className="text-sm capitalize">{label}</label>
-      <input
-        value={value || ""}
-        disabled={disabled}
-        onChange={e => onChange(e.target.value)}
-        className="w-full border p-2 rounded"
-      />
+      <input value={value || ""} disabled={disabled} onChange={(e) => onChange(e.target.value)} className="w-full border p-2 rounded" />
     </div>
   );
 }
@@ -396,7 +519,10 @@ function InputField({ label, value, onChange, disabled }) {
 function Section({ title, icon, children }) {
   return (
     <div className="bg-white p-5 rounded-xl shadow space-y-4">
-      <div className="flex gap-2 font-semibold text-sky-600">{icon}{title}</div>
+      <div className="flex gap-2 font-semibold text-sky-600">
+        {icon}
+        {title}
+      </div>
       {children}
     </div>
   );

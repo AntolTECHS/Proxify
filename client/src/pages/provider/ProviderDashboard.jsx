@@ -1,4 +1,3 @@
-
 // src/pages/provider/ProviderDashboard.jsx
 import { useState, useEffect } from "react";
 import { useAuth } from "../../context/AuthContext.jsx";
@@ -21,6 +20,13 @@ import {
   ResponsiveContainer,
 } from "recharts";
 
+const formatKES = (amount) =>
+  new Intl.NumberFormat("en-KE", {
+    style: "currency",
+    currency: "KES",
+    maximumFractionDigits: 0,
+  }).format(Number(amount || 0));
+
 export default function ProviderDashboard() {
   const { user, token } = useAuth();
 
@@ -34,7 +40,7 @@ export default function ProviderDashboard() {
     { title: "Customers Served", value: 0, icon: <FaUsers className="text-white w-6 h-6" /> },
     { title: "Rating", value: 0, icon: <FaStar className="text-white w-6 h-6" /> },
     { title: "Pending Jobs", value: 0, icon: <FaClock className="text-white w-6 h-6" /> },
-    { title: "Earnings", value: "$0", icon: <FaMoneyBillWave className="text-white w-6 h-6" /> },
+    { title: "Earnings", value: "KSh 0", icon: <FaMoneyBillWave className="text-white w-6 h-6" /> },
   ]);
 
   useEffect(() => {
@@ -50,20 +56,18 @@ export default function ProviderDashboard() {
       /* -----------------------------
          Fetch Provider Profile
       ----------------------------- */
-      const providerRes = await fetch(
-        "http://localhost:5000/api/providers/me",
-        { headers }
-      );
+      const providerRes = await fetch("http://localhost:5000/api/providers/me", {
+        headers,
+      });
 
       const providerData = await providerRes.json();
 
       /* -----------------------------
          Fetch Bookings (Jobs)
       ----------------------------- */
-      const jobsRes = await fetch(
-        "http://localhost:5000/api/bookings/provider",
-        { headers }
-      );
+      const jobsRes = await fetch("http://localhost:5000/api/bookings/provider", {
+        headers,
+      });
 
       const jobsData = await jobsRes.json();
       const bookings = jobsData.bookings || [];
@@ -73,16 +77,11 @@ export default function ProviderDashboard() {
       /* -----------------------------
          Compute Stats
       ----------------------------- */
-
       const totalJobs = bookings.length;
 
-      const pendingJobs = bookings.filter(
-        (j) => j.status === "pending"
-      ).length;
+      const pendingJobs = bookings.filter((j) => j.status === "pending").length;
 
-      const completedJobs = bookings.filter(
-        (j) => j.status === "completed"
-      );
+      const completedJobs = bookings.filter((j) => j.status === "completed");
 
       const totalEarnings = completedJobs.reduce(
         (sum, j) => sum + (j.price || 0),
@@ -99,12 +98,9 @@ export default function ProviderDashboard() {
         prev.map((s) => {
           if (s.title === "Total Jobs") return { ...s, value: totalJobs };
           if (s.title === "Pending Jobs") return { ...s, value: pendingJobs };
-          if (s.title === "Customers Served")
-            return { ...s, value: uniqueCustomers };
-          if (s.title === "Rating")
-            return { ...s, value: rating.toFixed(1) };
-          if (s.title === "Earnings")
-            return { ...s, value: `$${totalEarnings}` };
+          if (s.title === "Customers Served") return { ...s, value: uniqueCustomers };
+          if (s.title === "Rating") return { ...s, value: rating.toFixed(1) };
+          if (s.title === "Earnings") return { ...s, value: formatKES(totalEarnings) };
           return s;
         })
       );
@@ -112,7 +108,6 @@ export default function ProviderDashboard() {
       /* -----------------------------
          Build Monthly Chart
       ----------------------------- */
-
       const monthly = {};
 
       bookings.forEach((b) => {
@@ -142,9 +137,7 @@ export default function ProviderDashboard() {
       {user?.providerStatus === "pending" && (
         <div className="mb-6 p-4 flex items-center bg-blue-100 border-l-4 border-blue-400 text-blue-700 rounded">
           <FaExclamationTriangle className="w-6 h-6 mr-3" />
-          <span>
-            Your provider profile is under review. Verification pending.
-          </span>
+          <span>Your provider profile is under review. Verification pending.</span>
         </div>
       )}
 
@@ -159,9 +152,7 @@ export default function ProviderDashboard() {
             key={idx}
             className="flex items-center p-6 bg-white shadow-md rounded-lg border hover:shadow-xl transition"
           >
-            <div className="p-4 bg-sky-500 rounded-full mr-4">
-              {stat.icon}
-            </div>
+            <div className="p-4 bg-sky-500 rounded-full mr-4">{stat.icon}</div>
             <div>
               <p className="text-gray-500">{stat.title}</p>
               <p className="text-2xl font-bold">{stat.value}</p>
@@ -181,9 +172,7 @@ export default function ProviderDashboard() {
             <button
               onClick={() => setChartView("jobs")}
               className={`px-4 py-1 mr-2 rounded border ${
-                chartView === "jobs"
-                  ? "bg-sky-500 text-white"
-                  : "bg-white"
+                chartView === "jobs" ? "bg-sky-500 text-white" : "bg-white"
               }`}
             >
               Jobs
@@ -192,9 +181,7 @@ export default function ProviderDashboard() {
             <button
               onClick={() => setChartView("earnings")}
               className={`px-4 py-1 rounded border ${
-                chartView === "earnings"
-                  ? "bg-sky-500 text-white"
-                  : "bg-white"
+                chartView === "earnings" ? "bg-sky-500 text-white" : "bg-white"
               }`}
             >
               Earnings
@@ -206,8 +193,16 @@ export default function ProviderDashboard() {
           <LineChart data={chartData}>
             <CartesianGrid strokeDasharray="3 3" />
             <XAxis dataKey="month" />
-            <YAxis />
-            <Tooltip />
+            <YAxis
+              tickFormatter={(value) =>
+                chartView === "earnings" ? formatKES(value) : value
+              }
+            />
+            <Tooltip
+              formatter={(value) =>
+                chartView === "earnings" ? formatKES(value) : value
+              }
+            />
             <Line
               type="monotone"
               dataKey={chartView === "jobs" ? "jobs" : "earnings"}
@@ -225,9 +220,7 @@ export default function ProviderDashboard() {
           className="p-6 bg-white shadow-md rounded-lg border hover:shadow-lg cursor-pointer"
         >
           <h3 className="text-lg font-semibold mb-2">Manage Services</h3>
-          <p className="text-gray-600 text-sm">
-            Update your services and pricing.
-          </p>
+          <p className="text-gray-600 text-sm">Update your services and pricing.</p>
         </div>
 
         <div
@@ -235,9 +228,7 @@ export default function ProviderDashboard() {
           className="p-6 bg-white shadow-md rounded-lg border hover:shadow-lg cursor-pointer"
         >
           <h3 className="text-lg font-semibold mb-2">View Jobs</h3>
-          <p className="text-gray-600 text-sm">
-            View all assigned jobs.
-          </p>
+          <p className="text-gray-600 text-sm">View all assigned jobs.</p>
         </div>
       </div>
 
@@ -271,7 +262,7 @@ export default function ProviderDashboard() {
                       <td className="py-2">{job.service?.name}</td>
                       <td className="py-2">{job.customer?.name}</td>
                       <td className="py-2">{job.status}</td>
-                      <td className="py-2">${job.price}</td>
+                      <td className="py-2">{formatKES(job.price)}</td>
                     </tr>
                   ))}
                 </tbody>
@@ -283,4 +274,3 @@ export default function ProviderDashboard() {
     </div>
   );
 }
-

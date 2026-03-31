@@ -2,6 +2,7 @@ import asyncHandler from "express-async-handler";
 import Provider from "../models/Provider.js";
 import User from "../models/User.js";
 import { uploadBuffer } from "../utils/uploadToCloudinary.js";
+import { geocodeAddress } from "../utils/geocode.js";
 
 /**
  * @desc    Upgrade a user to provider
@@ -29,7 +30,7 @@ export const upgradeToProvider = asyncHandler(async (req, res) => {
       typeof req.body.services === "string"
         ? JSON.parse(req.body.services)
         : req.body.services || [];
-  } catch (err) {
+  } catch {
     return res.status(400).json({ message: "Invalid JSON format" });
   }
 
@@ -51,12 +52,11 @@ export const upgradeToProvider = asyncHandler(async (req, res) => {
     description: s.description || "",
   }));
 
-  let documents = [];
+  const documents = [];
 
   if (req.files?.files?.length) {
     for (const file of req.files.files) {
       const result = await uploadBuffer(file.buffer, "proxify/documents");
-
       documents.push({
         name: file.originalname,
         path: result.secure_url,
@@ -66,15 +66,48 @@ export const upgradeToProvider = asyncHandler(async (req, res) => {
     }
   }
 
+  const manualLat =
+    req.body.lat !== undefined && req.body.lat !== ""
+      ? Number(req.body.lat)
+      : null;
+  const manualLng =
+    req.body.lng !== undefined && req.body.lng !== ""
+      ? Number(req.body.lng)
+      : null;
+
+  let coordinates = null;
+
+  if (
+    Number.isFinite(manualLat) &&
+    Number.isFinite(manualLng)
+  ) {
+    coordinates = [manualLng, manualLat];
+  } else if (basicInfo.location) {
+    const geo = await geocodeAddress(basicInfo.location);
+    if (geo) coordinates = [geo.lng, geo.lat];
+  }
+
   const provider = await Provider.create({
     user: userId,
-    basicInfo,
+    basicInfo: {
+      providerName: basicInfo.providerName,
+      email: basicInfo.email,
+      phone: basicInfo.phone || "",
+      businessName: basicInfo.businessName || "",
+      bio: basicInfo.bio || "",
+      location: basicInfo.location || "",
+      photoURL: "",
+    },
     services,
     documents,
     status: "approved",
     availabilityStatus: "Offline",
     rating: 0,
     reviewCount: 0,
+    location: {
+      type: "Point",
+      coordinates: coordinates || [0, 0],
+    },
   });
 
   await User.findByIdAndUpdate(userId, {
@@ -84,8 +117,6 @@ export const upgradeToProvider = asyncHandler(async (req, res) => {
 
   res.status(201).json(provider);
 });
-
-
 
 /**
  * @desc    Get logged-in provider profile
@@ -104,8 +135,6 @@ export const getProviderProfile = asyncHandler(async (req, res) => {
 
   res.json(provider);
 });
-
-
 
 /**
  * @desc    Update provider profile
@@ -132,7 +161,7 @@ export const updateProvider = asyncHandler(async (req, res) => {
       typeof req.body.services === "string"
         ? JSON.parse(req.body.services)
         : req.body.services || [];
-  } catch (err) {
+  } catch {
     return res.status(400).json({ message: "Invalid JSON format" });
   }
 
@@ -141,9 +170,36 @@ export const updateProvider = asyncHandler(async (req, res) => {
     ...basicInfo,
   };
 
-  provider.services = services;
-  provider.lat = req.body.lat || provider.lat;
-  provider.lng = req.body.lng || provider.lng;
+  if (Array.isArray(services) && services.length > 0) {
+    provider.services = services.map((s) => ({
+      name: s.name,
+      price: Number(s.price) || 0,
+      description: s.description || "",
+    }));
+  }
+
+  // Save coordinates from manual lat/lng if provided, otherwise geocode the location text
+  const manualLat =
+    req.body.lat !== undefined && req.body.lat !== ""
+      ? Number(req.body.lat)
+      : null;
+  const manualLng =
+    req.body.lng !== undefined && req.body.lng !== ""
+      ? Number(req.body.lng)
+      : null;
+
+  if (Number.isFinite(manualLat) && Number.isFinite(manualLng)) {
+    provider.location = provider.location || { type: "Point", coordinates: [0, 0] };
+    provider.location.type = "Point";
+    provider.location.coordinates = [manualLng, manualLat];
+  } else if (provider.basicInfo.location) {
+    const geo = await geocodeAddress(provider.basicInfo.location);
+    if (geo) {
+      provider.location = provider.location || { type: "Point", coordinates: [0, 0] };
+      provider.location.type = "Point";
+      provider.location.coordinates = [geo.lng, geo.lat];
+    }
+  }
 
   /* Upload profile photo */
   if (req.files?.photo?.length > 0) {
@@ -151,18 +207,13 @@ export const updateProvider = asyncHandler(async (req, res) => {
       req.files.photo[0].buffer,
       "proxify/profile"
     );
-
     provider.basicInfo.photoURL = result.secure_url;
   }
 
   /* Upload documents */
   if (req.files?.files?.length > 0) {
     for (const file of req.files.files) {
-      const result = await uploadBuffer(
-        file.buffer,
-        "proxify/documents"
-      );
-
+      const result = await uploadBuffer(file.buffer, "proxify/documents");
       provider.documents.push({
         name: file.originalname,
         path: result.secure_url,
@@ -173,11 +224,8 @@ export const updateProvider = asyncHandler(async (req, res) => {
   }
 
   await provider.save();
-
   res.json(provider);
 });
-
-
 
 /**
  * @desc    Get all providers

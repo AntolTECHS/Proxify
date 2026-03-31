@@ -28,9 +28,7 @@ export default function CustomerLayout() {
     <div className="flex flex-col h-full">
       {/* Brand */}
       <div className="p-6 border-b border-gray-200">
-        <h1 className="text-2xl font-bold" style={{ color: "#0ea5e9" }}>
-          Proxify
-        </h1>
+        <h1 className="text-2xl font-bold text-teal-600">Proxify</h1>
         <p className="text-gray-500 text-sm mt-1">{user?.name}</p>
       </div>
 
@@ -43,14 +41,12 @@ export default function CustomerLayout() {
             onClick={() => setMobileOpen(false)}
             className={({ isActive }) =>
               `flex items-center gap-3 px-4 py-3 rounded-lg transition ${
-                isActive
-                  ? "shadow"
-                  : "text-gray-700 hover:bg-blue-50"
+                isActive ? "shadow" : "text-gray-700 hover:bg-teal-50"
               }`
             }
             style={({ isActive }) =>
               isActive
-                ? { backgroundColor: "#0ea5e9", color: "#ffffff" }
+                ? { backgroundColor: "#0d9488", color: "#ffffff" } // teal-600
                 : { color: "#374151" } // gray-700
             }
           >
@@ -110,8 +106,7 @@ export default function CustomerLayout() {
           <h2 className="text-lg font-semibold text-gray-800">{currentTitle}</h2>
           <button
             onClick={() => setMobileOpen(true)}
-            style={{ color: "#0ea5e9" }}
-            className="hover:opacity-80 transition"
+            className="text-teal-600 hover:opacity-80 transition"
           >
             <FaBars size={20} />
           </button>

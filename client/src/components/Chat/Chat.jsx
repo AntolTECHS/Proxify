@@ -237,7 +237,7 @@ export default function Chat({ bookingId, token }) {
     return (
       <div className="flex h-full min-h-[320px] items-center justify-center rounded-3xl border border-slate-200 bg-white shadow-2xl">
         <div className="text-center">
-          <div className="mx-auto mb-3 h-10 w-10 animate-spin rounded-full border-4 border-sky-200 border-t-sky-500" />
+          <div className="mx-auto mb-3 h-10 w-10 animate-spin rounded-full border-4 border-teal-200 border-t-teal-500" />
           <p className="text-sm font-medium text-slate-500">Loading chat…</p>
         </div>
       </div>
@@ -246,9 +246,9 @@ export default function Chat({ bookingId, token }) {
 
   return (
     <>
-      <div className="flex h-full w-full min-h-0 flex-col overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-2xl">
+      <div className="flex h-full min-h-0 w-full flex-col overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-2xl">
         {/* Header */}
-        <div className="shrink-0 border-b border-slate-200 bg-gradient-to-r from-sky-500 via-sky-500 to-cyan-500 px-5 py-4 text-white">
+        <div className="shrink-0 border-b border-slate-200 bg-gradient-to-r from-teal-600 via-teal-600 to-teal-500 px-5 py-4 text-white">
           <div className="flex items-center justify-between gap-3">
             <div>
               <h2 className="text-lg font-semibold tracking-tight">Chat</h2>
@@ -268,7 +268,7 @@ export default function Chat({ bookingId, token }) {
           {messages.length === 0 ? (
             <div className="flex h-full min-h-[260px] items-center justify-center">
               <div className="rounded-3xl border border-dashed border-slate-300 bg-white px-6 py-8 text-center shadow-sm">
-                <div className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-full bg-sky-50 text-sky-500">
+                <div className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-full bg-teal-50 text-teal-600">
                   <FaPaperPlane />
                 </div>
                 <p className="text-base font-semibold text-slate-700">No messages yet</p>
@@ -297,7 +297,7 @@ export default function Chat({ bookingId, token }) {
                       className={[
                         "max-w-[84%] rounded-2xl px-4 py-3 shadow-sm sm:max-w-[70%]",
                         isSelf
-                          ? "rounded-br-md bg-gradient-to-br from-sky-500 to-cyan-500 text-white"
+                          ? "rounded-br-md bg-gradient-to-br from-teal-600 to-teal-500 text-white"
                           : "rounded-bl-md border border-slate-200 bg-white text-slate-800",
                       ].join(" ")}
                     >
@@ -390,7 +390,7 @@ export default function Chat({ bookingId, token }) {
 
             <button
               type="button"
-              className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-600 transition hover:border-sky-200 hover:text-sky-600"
+              className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-600 transition hover:border-teal-200 hover:text-teal-600"
               onClick={() => fileInputRef.current?.click()}
               aria-label="Attach image"
             >
@@ -399,7 +399,7 @@ export default function Chat({ bookingId, token }) {
 
             <div className="min-w-0 flex-1">
               <textarea
-                className="h-11 w-full resize-none rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm leading-5 text-slate-800 outline-none transition placeholder:text-slate-400 focus:border-sky-300 focus:ring-4 focus:ring-sky-100"
+                className="h-11 w-full resize-none rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm leading-5 text-slate-800 outline-none transition placeholder:text-slate-400 focus:border-teal-300 focus:ring-4 focus:ring-teal-100"
                 value={newMsg}
                 onChange={handleTyping}
                 onKeyDown={handleKeyPress}
@@ -413,7 +413,7 @@ export default function Chat({ bookingId, token }) {
               className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-xl text-white transition ${
                 sending || (!newMsg.trim() && !file)
                   ? "cursor-not-allowed bg-slate-300"
-                  : "bg-gradient-to-r from-sky-500 to-cyan-500 shadow-md hover:from-sky-600 hover:to-cyan-600"
+                  : "bg-gradient-to-r from-teal-600 to-teal-500 shadow-md hover:from-teal-700 hover:to-teal-600"
               }`}
               onClick={sendMessage}
               disabled={sending || (!newMsg.trim() && !file)}

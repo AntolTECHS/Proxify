@@ -1,57 +1,97 @@
 // src/context/AuthContext.jsx
-import { createContext, useContext, useState, useEffect } from "react";
+import { createContext, useContext, useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 
-const AuthContext = createContext();
+const AuthContext = createContext(null);
+
 export const useAuth = () => useContext(AuthContext);
+
+const API_URL = import.meta.env.VITE_API_URL || "http://localhost:5000/api";
+
+const safeParseJSON = (value) => {
+  try {
+    return JSON.parse(value);
+  } catch {
+    return null;
+  }
+};
+
+const readStoredAuth = () => {
+  const storedToken = localStorage.getItem("token");
+  const storedUser = localStorage.getItem("user");
+  const parsedUser = storedUser ? safeParseJSON(storedUser) : null;
+
+  if (!storedToken || !parsedUser) return { token: null, user: null };
+  return { token: storedToken, user: parsedUser };
+};
+
+const handleResponse = async (res) => {
+  const contentType = res.headers.get("content-type") || "";
+  const data = contentType.includes("application/json") ? await res.json() : {};
+
+  if (!res.ok) {
+    throw new Error(data.message || "Something went wrong");
+  }
+
+  return data;
+};
 
 export const AuthProvider = ({ children }) => {
   const navigate = useNavigate();
-  const API_URL = import.meta.env.VITE_API_URL || "http://localhost:5000/api";
 
-  const [user, setUser] = useState(null);
-  const [token, setToken] = useState(null);
+  const [{ token, user }, setAuth] = useState(() => readStoredAuth());
   const [status, setStatus] = useState("idle");
   const [error, setError] = useState(null);
-  const [isLoading, setIsLoading] = useState(true);
+  const [isLoading, setIsLoading] = useState(false);
+  const [hasHydrated, setHasHydrated] = useState(false);
 
-  // Load user & token from localStorage on app start
   useEffect(() => {
-    const storedToken = localStorage.getItem("token");
-    const storedUser = localStorage.getItem("user");
-    if (storedToken && storedUser) {
-      setToken(storedToken);
-      setUser(JSON.parse(storedUser));
-    }
-    setIsLoading(false);
+    setHasHydrated(true);
   }, []);
 
-  // Save user and token to state + localStorage
-  const saveAuth = (userData, token) => {
-    setUser(userData);
-    setToken(token);
+  const saveAuth = (userData, authToken) => {
+    setAuth({ user: userData, token: authToken });
     localStorage.setItem("user", JSON.stringify(userData));
-    localStorage.setItem("token", token);
+    localStorage.setItem("token", authToken);
   };
 
-  // Update user without affecting token
+  const clearAuth = () => {
+    setAuth({ user: null, token: null });
+    localStorage.removeItem("user");
+    localStorage.removeItem("token");
+  };
+
   const updateUser = (updatedUser) => {
-    setUser(updatedUser);
-    localStorage.setItem("user", JSON.stringify(updatedUser));
+    setAuth((prev) => {
+      const next = { ...prev, user: updatedUser };
+      localStorage.setItem("user", JSON.stringify(updatedUser));
+      return next;
+    });
   };
 
-  // ---------------- REGISTER ----------------
   const register = async ({ name, email, password, role, phone }) => {
     setStatus("loading");
+    setIsLoading(true);
     setError(null);
+
     try {
       const res = await fetch(`${API_URL}/auth/register`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name, email, password, role, phone }),
+        body: JSON.stringify({
+          name: name?.trim(),
+          email: email?.trim(),
+          password,
+          role,
+          phone,
+        }),
       });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.message || "Registration failed");
+
+      const data = await handleResponse(res);
+
+      if (!data.user || !data.token) {
+        throw new Error("Invalid registration response");
+      }
 
       saveAuth(data.user, data.token);
       setStatus("success");
@@ -60,21 +100,31 @@ export const AuthProvider = ({ children }) => {
       setStatus("error");
       setError(err);
       return { success: false, error: err };
+    } finally {
+      setIsLoading(false);
     }
   };
 
-  // ---------------- LOGIN ----------------
   const login = async ({ email, password }) => {
     setStatus("loading");
+    setIsLoading(true);
     setError(null);
+
     try {
       const res = await fetch(`${API_URL}/auth/login`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email, password }),
+        body: JSON.stringify({
+          email: email?.trim(),
+          password,
+        }),
       });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.message || "Login failed");
+
+      const data = await handleResponse(res);
+
+      if (!data.user || !data.token) {
+        throw new Error("Invalid login response");
+      }
 
       saveAuth(data.user, data.token);
       setStatus("success");
@@ -83,42 +133,49 @@ export const AuthProvider = ({ children }) => {
       setStatus("error");
       setError(err);
       return { success: false, error: err };
+    } finally {
+      setIsLoading(false);
     }
   };
 
-  // ---------------- UPGRADE TO PROVIDER ----------------
   const upgradeToProvider = async (formData) => {
     setStatus("loading");
+    setIsLoading(true);
     setError(null);
 
     if (!token) {
       const err = new Error("You are not logged in. Please log in again.");
       setStatus("error");
       setError(err);
+      setIsLoading(false);
       return { success: false, error: err };
     }
 
     try {
+      const isFormData = typeof FormData !== "undefined" && formData instanceof FormData;
+
       const res = await fetch(`${API_URL}/providers/onboard`, {
         method: "POST",
         headers: {
           Authorization: `Bearer ${token}`,
-          "Content-Type": "application/json",
+          ...(isFormData ? {} : { "Content-Type": "application/json" }),
         },
-        body: JSON.stringify(formData),
+        body: isFormData ? formData : JSON.stringify(formData),
       });
 
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.message || "Onboarding failed");
+      const data = await handleResponse(res);
 
       const newToken = data.token || token;
+      const updatedUser = data.user
+        ? data.user
+        : {
+            ...user,
+            role: "provider",
+          };
 
-      const updatedUser = { ...user, role: "provider" };
       saveAuth(updatedUser, newToken);
-
       setStatus("success");
 
-      // redirect to provider dashboard
       navigate("/provider/dashboard", { replace: true });
 
       return { success: true, user: updatedUser };
@@ -126,18 +183,19 @@ export const AuthProvider = ({ children }) => {
       setStatus("error");
       setError(err);
       return { success: false, error: err };
+    } finally {
+      setIsLoading(false);
     }
   };
 
-  // ---------------- LOGOUT ----------------
   const logout = () => {
-    setUser(null);
-    setToken(null);
+    clearAuth();
     setStatus("idle");
-    localStorage.removeItem("token");
-    localStorage.removeItem("user");
-    navigate("/login");
+    setError(null);
+    navigate("/login", { replace: true });
   };
+
+  const isAuthenticated = useMemo(() => Boolean(user && token), [user, token]);
 
   const value = {
     user,
@@ -145,11 +203,14 @@ export const AuthProvider = ({ children }) => {
     status,
     error,
     isLoading,
+    hasHydrated,
+    isAuthenticated,
     register,
     login,
     logout,
-    updateUser, // <-- added
+    updateUser,
     upgradeToProvider,
+    clearAuth,
   };
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

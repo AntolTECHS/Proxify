@@ -1,4 +1,3 @@
-// routes/providerRoutes.js
 import express from "express";
 import multer from "multer";
 import Provider from "../models/Provider.js";
@@ -7,13 +6,13 @@ import jwt from "jsonwebtoken";
 import { protect } from "../middleware/authMiddleware.js";
 import { v2 as cloudinary } from "cloudinary";
 import streamifier from "streamifier";
+import { geocodeAddress } from "../utils/geocode.js";
 
 const router = express.Router();
 
 /* -------------------------------------------------------------------------- */
 /*                            CLOUDINARY CONFIG                               */
 /* -------------------------------------------------------------------------- */
-
 cloudinary.config({
   cloud_name: process.env.CLOUDINARY_NAME,
   api_key: process.env.CLOUDINARY_KEY,
@@ -32,124 +31,200 @@ const uploadBuffer = (buffer, folder) =>
 /* -------------------------------------------------------------------------- */
 /*                               MULTER CONFIG                                */
 /* -------------------------------------------------------------------------- */
-
 const storage = multer.memoryStorage();
 const upload = multer({ storage, limits: { fileSize: 5 * 1024 * 1024 } });
+
+function parseJsonInput(input, fallback = {}) {
+  try {
+    if (typeof input === "string") return JSON.parse(input);
+    if (input && typeof input === "object") return input;
+    return fallback;
+  } catch {
+    return null;
+  }
+}
+
+function normalizeServices(services) {
+  if (!Array.isArray(services)) return [];
+  return services.map((s) => ({
+    name: s?.name || "",
+    price: Number(s?.price) || 0,
+    description: s?.description || "",
+  }));
+}
+
+function buildCoordinatesFromLatLng(lat, lng) {
+  const latNum = Number(lat);
+  const lngNum = Number(lng);
+
+  if (Number.isFinite(latNum) && Number.isFinite(lngNum)) {
+    return [lngNum, latNum]; // [lng, lat]
+  }
+
+  return null;
+}
 
 /* -------------------------------------------------------------------------- */
 /*                                  TEST ROUTE                                */
 /* -------------------------------------------------------------------------- */
-
-router.get("/test", (req, res) => {
-  res.json({ message: "Provider route works!" });
-});
+router.get("/test", (req, res) => res.json({ message: "Provider route works!" }));
 
 /* -------------------------------------------------------------------------- */
 /*                         POST /api/providers/onboard                        */
-/*                         BASIC INFO ONLY                                   */
 /* -------------------------------------------------------------------------- */
-
-router.post("/onboard", protect(), async (req, res) => {
-  try {
-    let info = {};
-
+router.post(
+  "/onboard",
+  protect(),
+  upload.fields([
+    { name: "photo", maxCount: 1 },
+    { name: "files", maxCount: 10 },
+  ]),
+  async (req, res) => {
     try {
-      info =
-        typeof req.body.basicInfo === "string"
-          ? JSON.parse(req.body.basicInfo)
-          : req.body.basicInfo || {};
-    } catch {
-      return res.status(400).json({ message: "Invalid JSON format for basicInfo" });
+      const basicInfo = parseJsonInput(req.body.basicInfo, null);
+      const servicesInput = parseJsonInput(req.body.services, []);
+
+      if (!basicInfo) {
+        return res.status(400).json({ message: "Invalid JSON format for basicInfo" });
+      }
+
+      const services = normalizeServices(servicesInput);
+
+      if (!basicInfo.providerName || !basicInfo.email || !basicInfo.phone) {
+        return res.status(400).json({
+          message: "Provider name, email, and phone are required",
+        });
+      }
+
+      const existingProvider = await Provider.findOne({ user: req.user._id });
+
+      // Upload profile photo
+      let photoURL = "";
+      if (req.files?.photo?.[0]) {
+        const result = await uploadBuffer(req.files.photo[0].buffer, "proxify/profile");
+        photoURL = result.secure_url;
+      }
+
+      // Upload documents
+      const documents = [];
+      if (req.files?.files?.length) {
+        for (const file of req.files.files) {
+          const result = await uploadBuffer(file.buffer, "proxify/documents");
+          documents.push({
+            name: file.originalname,
+            path: result.secure_url,
+            size: file.size,
+            type: file.mimetype,
+          });
+        }
+      }
+
+      // Coordinates:
+      // 1) Use explicit lat/lng if sent
+      // 2) Otherwise geocode the location text using OpenCage
+      // 3) Fallback to [0,0]
+      let coordinates = buildCoordinatesFromLatLng(req.body.lat, req.body.lng);
+
+      if (!coordinates && basicInfo.location) {
+        const geo = await geocodeAddress(basicInfo.location);
+        if (geo) {
+          coordinates = [geo.lng, geo.lat];
+        }
+      }
+
+      if (!coordinates) coordinates = [0, 0];
+
+      let provider;
+
+      if (!existingProvider) {
+        provider = await Provider.create({
+          user: req.user._id,
+          basicInfo: {
+            providerName: basicInfo.providerName,
+            email: basicInfo.email,
+            phone: basicInfo.phone,
+            businessName: basicInfo.businessName || "",
+            bio: basicInfo.bio || "",
+            location: basicInfo.location || "",
+            photoURL,
+          },
+          services,
+          documents,
+          location: {
+            type: "Point",
+            coordinates,
+          },
+          status: "approved",
+          rating: 0,
+          reviewCount: 0,
+          availabilityStatus: "Offline",
+        });
+      } else {
+        existingProvider.basicInfo = {
+          ...existingProvider.basicInfo,
+          providerName: basicInfo.providerName ?? existingProvider.basicInfo.providerName,
+          email: basicInfo.email ?? existingProvider.basicInfo.email,
+          phone: basicInfo.phone ?? existingProvider.basicInfo.phone,
+          businessName: basicInfo.businessName ?? existingProvider.basicInfo.businessName,
+          bio: basicInfo.bio ?? existingProvider.basicInfo.bio,
+          location: basicInfo.location ?? existingProvider.basicInfo.location,
+          photoURL: photoURL || existingProvider.basicInfo.photoURL,
+        };
+
+        if (services.length > 0) {
+          existingProvider.services = services;
+        }
+
+        if (documents.length > 0) {
+          existingProvider.documents.push(...documents);
+        }
+
+        if (!existingProvider.location) {
+          existingProvider.location = { type: "Point", coordinates: [0, 0] };
+        }
+
+        if (coordinates) {
+          existingProvider.location.coordinates = coordinates;
+        }
+
+        await existingProvider.save();
+        provider = existingProvider;
+      }
+
+      const updatedUser = await User.findById(req.user._id);
+      if (!updatedUser) {
+        return res.status(404).json({ message: "User not found" });
+      }
+
+      if (updatedUser.role !== "provider") {
+        updatedUser.role = "provider";
+        await updatedUser.save();
+      }
+
+      const token = jwt.sign(
+        { id: updatedUser._id, role: updatedUser.role },
+        process.env.JWT_SECRET,
+        { expiresIn: "7d" }
+      );
+
+      res.status(201).json({ provider, token });
+    } catch (err) {
+      console.error("ONBOARD ERROR:", err);
+      res.status(500).json({ message: err.message });
     }
-
-    if (!info.providerName || !info.email || !info.phone) {
-      return res.status(400).json({
-        message: "Provider name, email, and phone are required",
-      });
-    }
-
-    let provider = await Provider.findOne({ user: req.user._id });
-
-    if (!provider) {
-      provider = await Provider.create({
-        user: req.user._id,
-        basicInfo: {
-          providerName: info.providerName,
-          email: info.email,
-          phone: info.phone,
-          businessName: info.businessName || "",
-          bio: info.bio || "",
-          location: info.location || "",
-          photoURL: "",
-        },
-        services: [],
-        documents: [],
-        location: {
-          type: "Point",
-          coordinates: [0, 0],
-        },
-        status: "approved",
-        availabilityStatus: "Offline",
-        rating: 0,
-        reviewCount: 0,
-      });
-    } else {
-      provider.basicInfo = {
-        ...provider.basicInfo,
-        providerName: info.providerName ?? provider.basicInfo.providerName,
-        email: info.email ?? provider.basicInfo.email,
-        phone: info.phone ?? provider.basicInfo.phone,
-        businessName: info.businessName ?? provider.basicInfo.businessName,
-        bio: info.bio ?? provider.basicInfo.bio,
-        location: info.location ?? provider.basicInfo.location,
-      };
-
-      await provider.save();
-    }
-
-    const updatedUser = await User.findById(req.user._id);
-    if (!updatedUser) {
-      return res.status(404).json({ message: "User not found" });
-    }
-
-    if (updatedUser.role !== "provider") {
-      updatedUser.role = "provider";
-      await updatedUser.save();
-    }
-
-    const token = jwt.sign(
-      { id: updatedUser._id, role: updatedUser.role },
-      process.env.JWT_SECRET,
-      { expiresIn: "7d" }
-    );
-
-    return res.status(201).json({
-      provider,
-      token,
-      onboardComplete: true,
-    });
-  } catch (err) {
-    console.error("ONBOARD ERROR:", err);
-    return res.status(500).json({ message: err.message });
   }
-});
+);
 
 /* -------------------------------------------------------------------------- */
 /*                       GET ALL APPROVED PROVIDERS                           */
 /* -------------------------------------------------------------------------- */
-
 router.get("/", async (req, res) => {
   try {
     const providers = await Provider.find({ status: "approved" })
       .populate("user", "-password")
       .lean();
 
-    const result = providers.map((p) => ({
-      ...p,
-      approvedBadge: p.status === "approved" ? "Approved" : "Not Approved",
-    }));
-
-    res.json(result);
+    res.json(providers);
   } catch (err) {
     console.error("GET PROVIDERS ERROR:", err);
     res.status(500).json({ message: "Failed to fetch providers" });
@@ -159,7 +234,6 @@ router.get("/", async (req, res) => {
 /* -------------------------------------------------------------------------- */
 /*                        GET Logged-in Provider Profile                      */
 /* -------------------------------------------------------------------------- */
-
 router.get("/me", protect("provider"), async (req, res) => {
   try {
     const provider = await Provider.findOne({ user: req.user._id }).lean();
@@ -173,9 +247,7 @@ router.get("/me", protect("provider"), async (req, res) => {
 
 /* -------------------------------------------------------------------------- */
 /*                          UPDATE Provider Profile                           */
-/*                          FULL SETTINGS ONLY                               */
 /* -------------------------------------------------------------------------- */
-
 router.put(
   "/update",
   protect("provider"),
@@ -186,49 +258,39 @@ router.put(
   async (req, res) => {
     try {
       const provider = await Provider.findOne({ user: req.user._id });
-      if (!provider) return res.status(404).json({ message: "Provider not found" });
+      if (!provider) {
+        return res.status(404).json({ message: "Provider not found" });
+      }
 
-      let info = {};
-      let services = [];
+      const basicInfo = parseJsonInput(req.body.basicInfo, null);
+      const servicesInput = parseJsonInput(req.body.services, []);
 
-      try {
-        info =
-          typeof req.body.basicInfo === "string"
-            ? JSON.parse(req.body.basicInfo)
-            : req.body.basicInfo || {};
-
-        services =
-          typeof req.body.services === "string"
-            ? JSON.parse(req.body.services)
-            : req.body.services || [];
-      } catch {
+      if (!basicInfo) {
         return res.status(400).json({ message: "Invalid JSON format" });
       }
 
+      const services = normalizeServices(servicesInput);
+
       provider.basicInfo = {
         ...provider.basicInfo,
-        providerName: info.providerName ?? provider.basicInfo.providerName,
-        email: info.email ?? provider.basicInfo.email,
-        phone: info.phone ?? provider.basicInfo.phone,
-        businessName: info.businessName ?? provider.basicInfo.businessName,
-        bio: info.bio ?? provider.basicInfo.bio,
-        location: info.location ?? provider.basicInfo.location,
+        providerName: basicInfo.providerName ?? provider.basicInfo.providerName,
+        email: basicInfo.email ?? provider.basicInfo.email,
+        phone: basicInfo.phone ?? provider.basicInfo.phone,
+        businessName: basicInfo.businessName ?? provider.basicInfo.businessName,
+        bio: basicInfo.bio ?? provider.basicInfo.bio,
+        location: basicInfo.location ?? provider.basicInfo.location,
       };
 
+      // Upload new profile photo
       if (req.files?.photo?.[0]) {
-        const result = await uploadBuffer(
-          req.files.photo[0].buffer,
-          "proxify/profile"
-        );
+        const result = await uploadBuffer(req.files.photo[0].buffer, "proxify/profile");
         provider.basicInfo.photoURL = result.secure_url;
       }
 
-      if (req.files?.files?.length > 0) {
+      // Upload new documents
+      if (req.files?.files?.length) {
         for (const file of req.files.files) {
-          const result = await uploadBuffer(
-            file.buffer,
-            "proxify/documents"
-          );
+          const result = await uploadBuffer(file.buffer, "proxify/documents");
           provider.documents.push({
             name: file.originalname,
             path: result.secure_url,
@@ -238,19 +300,24 @@ router.put(
         }
       }
 
-      if (Array.isArray(services) && services.length > 0) {
-        provider.services = services.map((s) => ({
-          name: s.name,
-          price: Number(s.price) || 0,
-          description: s.description || "",
-        }));
+      // Update services if provided
+      if (services.length > 0) {
+        provider.services = services;
       }
 
-      if (info.lat !== undefined && info.lng !== undefined) {
-        provider.location = {
-          type: "Point",
-          coordinates: [Number(info.lng), Number(info.lat)],
-        };
+      // Update coordinates from lat/lng if sent
+      const coordinates = buildCoordinatesFromLatLng(req.body.lat, req.body.lng);
+
+      // If no lat/lng were sent, geocode the location text using OpenCage
+      if (coordinates) {
+        provider.location = provider.location || { type: "Point", coordinates: [0, 0] };
+        provider.location.coordinates = coordinates;
+      } else if (provider.basicInfo.location) {
+        const geo = await geocodeAddress(provider.basicInfo.location);
+        if (geo) {
+          provider.location = provider.location || { type: "Point", coordinates: [0, 0] };
+          provider.location.coordinates = [geo.lng, geo.lat];
+        }
       }
 
       await provider.save();
@@ -265,7 +332,6 @@ router.put(
 /* -------------------------------------------------------------------------- */
 /*                      GET Public Provider Profile by ID                     */
 /* -------------------------------------------------------------------------- */
-
 router.get("/:id", async (req, res) => {
   try {
     const provider = await Provider.findById(req.params.id).lean();

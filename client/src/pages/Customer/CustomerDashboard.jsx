@@ -9,11 +9,28 @@ import {
   FaRegStar,
   FaStarHalfAlt,
   FaBell,
+  FaMapMarkerAlt,
 } from "react-icons/fa";
 import { useAuth } from "../../context/AuthContext.jsx";
 import Chat from "../../components/Chat/Chat.jsx";
 
+import { MapContainer, TileLayer, Marker, useMap } from "react-leaflet";
+import L from "leaflet";
+import "leaflet/dist/leaflet.css";
+
+import markerIcon2x from "leaflet/dist/images/marker-icon-2x.png";
+import markerIcon from "leaflet/dist/images/marker-icon.png";
+import markerShadow from "leaflet/dist/images/marker-shadow.png";
+
 const API_URL = import.meta.env.VITE_API_URL || "http://localhost:5000/api";
+
+// Fix Leaflet default marker icons
+delete L.Icon.Default.prototype._getIconUrl;
+L.Icon.Default.mergeOptions({
+  iconRetinaUrl: markerIcon2x,
+  iconUrl: markerIcon,
+  shadowUrl: markerShadow,
+});
 
 const getProviderId = (provider) => {
   if (!provider) return "";
@@ -21,10 +38,42 @@ const getProviderId = (provider) => {
   return provider._id || provider.id || "";
 };
 
+const formatKES = (amount) =>
+  new Intl.NumberFormat("en-KE", {
+    style: "currency",
+    currency: "KES",
+    maximumFractionDigits: 0,
+  }).format(Number(amount || 0));
+
+function RecenterMap({ lat, lng }) {
+  const map = useMap();
+
+  useEffect(() => {
+    if (lat != null && lng != null) {
+      map.setView([lat, lng], 15);
+    }
+  }, [lat, lng, map]);
+
+  return null;
+}
+
+const getProviderCoords = (provider) => {
+  const coords =
+    provider?.location?.coordinates ||
+    provider?.locationGeoJSON?.coordinates ||
+    provider?.coordinates ||
+    [];
+
+  const lng = coords?.[0];
+  const lat = coords?.[1];
+
+  if (lat == null || lng == null) return null;
+  return { lat, lng };
+};
+
 export default function CustomerDashboard() {
   const { user, token, logout } = useAuth();
 
-  /* ---------------------- STATE ---------------------- */
   const [bookings, setBookings] = useState([]);
   const [providers, setProviders] = useState([]);
   const [bookingFilter, setBookingFilter] = useState("all");
@@ -34,6 +83,7 @@ export default function CustomerDashboard() {
   const [bookingProvider, setBookingProvider] = useState(null);
   const [selectedService, setSelectedService] = useState("");
   const [notification, setNotification] = useState(null);
+  const [mapProvider, setMapProvider] = useState(null);
 
   const [quickBooking, setQuickBooking] = useState({
     date: "",
@@ -50,7 +100,6 @@ export default function CustomerDashboard() {
 
   const [chatBookingId, setChatBookingId] = useState(null);
 
-  /* ---------------------- HELPERS ---------------------- */
   const handleUnauthorized = () => {
     alert("Session expired. Please log in again.");
     logout();
@@ -66,7 +115,6 @@ export default function CustomerDashboard() {
     chatBooking?.provider?.name ||
     "Provider";
 
-  /* ---------------------- FETCH BOOKINGS & PROVIDERS ---------------------- */
   useEffect(() => {
     if (!user || !token) return;
 
@@ -98,7 +146,6 @@ export default function CustomerDashboard() {
     fetchData();
   }, [user, token]);
 
-  /* ---------------------- FETCH REVIEWS ---------------------- */
   useEffect(() => {
     if (!selectedProvider?._id) {
       setProviderReviews([]);
@@ -124,7 +171,6 @@ export default function CustomerDashboard() {
     fetchReviews();
   }, [selectedProvider]);
 
-  /* ---------------------- MEMOIZED DATA ---------------------- */
   const upcomingBookings = useMemo(
     () => bookings.filter((b) => b.status !== "completed" && b.status !== "cancelled"),
     [bookings]
@@ -154,14 +200,18 @@ export default function CustomerDashboard() {
     });
   }, [providers, searchTerm, serviceFilter]);
 
-  /* ---------------------- BOOKING ---------------------- */
   const submitBooking = async () => {
     if (!bookingProvider?._id) {
       alert("Please select a provider.");
       return;
     }
 
-    if (!quickBooking.date || !quickBooking.time || !quickBooking.location || !selectedService) {
+    if (
+      !quickBooking.date ||
+      !quickBooking.time ||
+      !quickBooking.location ||
+      !selectedService
+    ) {
       alert("Please complete all booking fields.");
       return;
     }
@@ -200,7 +250,6 @@ export default function CustomerDashboard() {
     }
   };
 
-  /* ---------------------- REVIEW ---------------------- */
   const openReviewModal = (booking) => {
     setReviewBooking(booking);
     setReviewData({ rating: 0, comment: "" });
@@ -238,7 +287,6 @@ export default function CustomerDashboard() {
       if (res.status === 401) return handleUnauthorized();
 
       const data = await res.json();
-
       if (!res.ok) throw new Error(data.message || "Failed to submit review");
 
       setBookings((prev) =>
@@ -250,7 +298,9 @@ export default function CustomerDashboard() {
         if (refreshed.status === 401) return handleUnauthorized();
 
         const refreshedData = await refreshed.json();
-        setProviderReviews(Array.isArray(refreshedData.reviews) ? refreshedData.reviews : []);
+        setProviderReviews(
+          Array.isArray(refreshedData.reviews) ? refreshedData.reviews : []
+        );
       }
 
       setReviewBooking(null);
@@ -262,23 +312,22 @@ export default function CustomerDashboard() {
     }
   };
 
-  /* ---------------------- RENDER ---------------------- */
   return (
-    <div className="p-6 bg-gray-100 min-h-screen">
-      {/* HEADER */}
-      <div className="flex justify-between items-center mb-8">
-        <h1 className="text-3xl font-bold text-sky-500">Welcome {user?.name}</h1>
+    <div className="min-h-screen bg-gray-100 p-4 sm:p-6">
+      <div className="mb-8 flex items-center justify-between">
+        <h1 className="text-2xl font-bold text-teal-600 sm:text-3xl">
+          Welcome {user?.name}
+        </h1>
         <FaBell className="text-xl text-gray-500" />
       </div>
 
       {notification && (
-        <div className="bg-green-100 text-green-700 px-4 py-2 rounded mb-6">
+        <div className="mb-6 rounded-lg bg-green-100 px-4 py-2 text-green-700">
           {notification}
         </div>
       )}
 
-      {/* STATS */}
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
+      <div className="mb-8 grid grid-cols-1 gap-4 md:grid-cols-4">
         <div onClick={() => setBookingFilter("all")}>
           <Stat icon={<FaClipboardList />} label="Bookings" value={bookings.length} />
         </div>
@@ -288,7 +337,9 @@ export default function CustomerDashboard() {
           label="Avg Rating"
           value={
             providers.length
-              ? (providers.reduce((a, b) => a + (b.rating || 0), 0) / providers.length).toFixed(1)
+              ? (
+                  providers.reduce((a, b) => a + (b.rating || 0), 0) / providers.length
+                ).toFixed(1)
               : "0"
           }
         />
@@ -297,14 +348,13 @@ export default function CustomerDashboard() {
         </div>
       </div>
 
-      {/* BOOKINGS */}
       <Section title={bookingFilter === "upcoming" ? "Upcoming Bookings" : "Your Bookings"}>
         {filteredBookings.length === 0 ? (
           <Empty text="No bookings yet." />
         ) : (
-          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4">
             {filteredBookings.map((b) => (
-              <div key={b._id} className="bg-white rounded-xl shadow p-4">
+              <div key={b._id} className="rounded-xl bg-white p-4 shadow">
                 <p className="font-semibold">{b.serviceName}</p>
                 <p className="text-sm text-gray-500">
                   {b.provider?.basicInfo?.providerName || b.provider?.name}
@@ -319,7 +369,7 @@ export default function CustomerDashboard() {
                   {b.status === "completed" && !b.reviewed && (
                     <button
                       onClick={() => openReviewModal(b)}
-                      className="text-sm text-sky-600 underline"
+                      className="text-sm text-teal-600 underline"
                     >
                       Leave Review
                     </button>
@@ -327,13 +377,13 @@ export default function CustomerDashboard() {
                   {b.status !== "cancelled" && (
                     <button
                       onClick={() => setChatBookingId(b._id)}
-                      className="text-sm text-sky-600 underline"
+                      className="text-sm text-teal-600 underline"
                     >
                       Chat
                     </button>
                   )}
                   {b.reviewed && (
-                    <span className="text-sm text-green-600 font-medium">Reviewed</span>
+                    <span className="text-sm font-medium text-green-600">Reviewed</span>
                   )}
                 </div>
               </div>
@@ -342,17 +392,16 @@ export default function CustomerDashboard() {
         )}
       </Section>
 
-      {/* PROVIDERS */}
       <Section title="Available Providers">
-        <div className="flex flex-wrap gap-4 mb-6">
+        <div className="mb-6 flex flex-wrap gap-4">
           <input
             placeholder="Search provider"
-            className="border px-3 py-2 rounded-lg"
+            className="rounded-lg border px-3 py-2"
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
           />
           <select
-            className="border px-3 py-2 rounded-lg"
+            className="rounded-lg border px-3 py-2"
             value={serviceFilter}
             onChange={(e) => setServiceFilter(e.target.value)}
           >
@@ -366,41 +415,60 @@ export default function CustomerDashboard() {
         </div>
 
         <div className="max-h-[500px] overflow-y-auto">
-          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6">
-            {filteredProviders.map((p) => (
-              <div
-                key={p._id}
-                onClick={() => setSelectedProvider(p)}
-                className="bg-white rounded-xl shadow hover:shadow-lg cursor-pointer overflow-hidden p-4 text-center"
-              >
-                <div className="flex justify-center mb-3">
-                  <img
-                    src={p.basicInfo?.photoURL || "https://dummyimage.com/300x300/ccc/000"}
-                    alt={p.basicInfo?.providerName || "Provider"}
-                    className="w-24 h-24 rounded-full object-cover border-4 border-sky-100 shadow"
-                  />
+          <div className="grid grid-cols-2 gap-4 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-4">
+            {filteredProviders.map((p) => {
+              const coords = getProviderCoords(p);
+
+              return (
+                <div
+                  key={p._id}
+                  onClick={() => setSelectedProvider(p)}
+                  className="cursor-pointer overflow-hidden rounded-xl bg-white p-4 text-center shadow transition hover:shadow-lg"
+                >
+                  <div className="mb-3 flex justify-center">
+                    <img
+                      src={p.basicInfo?.photoURL || "https://dummyimage.com/300x300/ccc/000"}
+                      alt={p.basicInfo?.providerName || "Provider"}
+                      className="h-24 w-24 rounded-full border-4 border-teal-100 object-cover shadow"
+                    />
+                  </div>
+
+                  <h3 className="text-lg font-bold text-teal-600">
+                    {p.basicInfo?.providerName}
+                  </h3>
+
+                  <p className="text-sm text-gray-500">
+                    {p.services?.map((s) => s.name).join(", ")}
+                  </p>
+
+                  <div className="flex items-center justify-center gap-2">
+                    <StarRating rating={p.rating} />
+                    <span className="text-sm">{(p.rating || 0).toFixed(1)}</span>
+                  </div>
+
+                  <p className="mt-1 text-sm">{p.experience} years experience</p>
+
+                  <p className="mt-1 font-semibold text-teal-600">
+                    From {formatKES(p.services?.[0]?.price || 20)}
+                  </p>
+
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setMapProvider(p);
+                    }}
+                    className="mt-3 inline-flex items-center justify-center gap-2 text-sm text-gray-600 hover:text-teal-600"
+                  >
+                    <FaMapMarkerAlt />
+                    <span>{coords ? "View map" : "No map data"}</span>
+                  </button>
                 </div>
-                <h3 className="font-bold text-lg text-sky-600">
-                  {p.basicInfo?.providerName}
-                </h3>
-                <p className="text-sm text-gray-500">
-                  {p.services?.map((s) => s.name).join(", ")}
-                </p>
-                <div className="flex items-center justify-center gap-2">
-                  <StarRating rating={p.rating} />
-                  <span className="text-sm">{(p.rating || 0).toFixed(1)}</span>
-                </div>
-                <p className="text-sm mt-1">{p.experience} years experience</p>
-                <p className="text-sky-600 font-semibold">
-                  From ${p.services?.[0]?.price || 20}
-                </p>
-              </div>
-            ))}
+              );
+            })}
           </div>
         </div>
       </Section>
 
-      {/* ---------------- MODALS ---------------- */}
       {selectedProvider && (
         <ProviderModal
           selectedProvider={selectedProvider}
@@ -443,41 +511,44 @@ export default function CustomerDashboard() {
           onClose={() => setChatBookingId(null)}
         />
       )}
+
+      {mapProvider && <MapModal provider={mapProvider} onClose={() => setMapProvider(null)} />}
     </div>
   );
 }
 
-/* ---------------- COMPONENTS ---------------- */
 const Stat = ({ icon, label, value }) => (
-  <div className="bg-white p-5 rounded-xl shadow flex items-center gap-4 cursor-pointer">
-    <div className="text-sky-500 text-xl">{icon}</div>
+  <div className="flex cursor-pointer items-center gap-4 rounded-xl bg-teal-600 p-5 text-white shadow transition hover:bg-teal-700">
+    <div className="text-2xl text-white">{icon}</div>
     <div>
-      <p className="text-gray-500 text-sm">{label}</p>
-      <p className="text-2xl font-bold">{value}</p>
+      <p className="text-sm text-white/90">{label}</p>
+      <p className="text-2xl font-bold text-white">{value}</p>
     </div>
   </div>
 );
 
 const Section = ({ title, children }) => (
-  <div className="bg-white p-6 rounded-xl shadow mb-8">
-    <h2 className="text-xl font-semibold mb-4 text-sky-500">{title}</h2>
+  <div className="mb-8 rounded-xl bg-white p-6 shadow">
+    <h2 className="mb-4 text-xl font-semibold text-teal-600">{title}</h2>
     {children}
   </div>
 );
 
-const Empty = ({ text }) => <p className="text-center text-gray-500 py-6">{text}</p>;
+const Empty = ({ text }) => <p className="py-6 text-center text-gray-500">{text}</p>;
 
 const StatusBadge = ({ status }) => {
   const styles = {
     pending: "bg-yellow-100 text-yellow-700",
-    accepted: "bg-blue-100 text-blue-700",
+    accepted: "bg-teal-100 text-teal-700",
     completed: "bg-green-100 text-green-700",
     cancelled: "bg-red-100 text-red-700",
   };
 
   return (
     <span
-      className={`px-3 py-1 rounded-full text-sm ${styles[status] || "bg-gray-100 text-gray-700"}`}
+      className={`rounded-full px-3 py-1 text-sm ${
+        styles[status] || "bg-gray-100 text-gray-700"
+      }`}
     >
       {status}
     </span>
@@ -492,7 +563,7 @@ const StarRating = ({ rating = 0 }) => {
       stars.push(<FaStarHalfAlt key={i} className="text-yellow-400" />);
     else stars.push(<FaRegStar key={i} className="text-gray-300" />);
   }
-  return <div className="flex gap-1 justify-center">{stars}</div>;
+  return <div className="flex justify-center gap-1">{stars}</div>;
 };
 
 const StarRatingSelector = ({ rating, setRating }) => {
@@ -500,18 +571,27 @@ const StarRatingSelector = ({ rating, setRating }) => {
   for (let i = 1; i <= 5; i++) {
     stars.push(
       <span key={i} onClick={() => setRating(i)} className="cursor-pointer">
-        {i <= rating ? <FaStar className="text-yellow-400 inline" /> : <FaRegStar className="text-gray-300 inline" />}
+        {i <= rating ? (
+          <FaStar className="inline text-yellow-400" />
+        ) : (
+          <FaRegStar className="inline text-gray-300" />
+        )}
       </span>
     );
   }
-  return <div className="flex gap-1 justify-center mb-2">{stars}</div>;
+  return <div className="mb-2 flex justify-center gap-1">{stars}</div>;
 };
 
-/* ---------------- MODALS ---------------- */
-const Modal = ({ children, onClose }) => (
-  <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
-    <div className="bg-white rounded-xl p-6 relative w-full sm:w-11/12 md:w-3/4 lg:w-2/3 xl:w-1/2 max-h-[85vh] overflow-y-auto">
-      <button className="absolute top-3 right-3" onClick={onClose}>
+const Modal = ({ children, onClose, panelClassName = "max-w-lg" }) => (
+  <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-0 sm:p-4">
+    <div
+      className={`relative flex w-full flex-col overflow-hidden rounded-none bg-white shadow-2xl sm:max-h-[85vh] sm:rounded-2xl ${panelClassName}`}
+    >
+      <button
+        className="absolute right-3 top-3 z-10 rounded-full p-2 text-gray-600 hover:bg-gray-100 hover:text-gray-900"
+        onClick={onClose}
+        aria-label="Close modal"
+      >
         <FaTimes />
       </button>
       {children}
@@ -520,23 +600,83 @@ const Modal = ({ children, onClose }) => (
 );
 
 const ChatModal = ({ booking, providerName, token, userId, onClose }) => (
-  <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
-    <div className="bg-white rounded-xl w-full sm:w-11/12 md:w-3/4 lg:w-2/3 xl:w-1/2 h-[85vh] max-h-[85vh] overflow-hidden flex flex-col shadow-2xl">
-      <div className="shrink-0 bg-white border-b px-6 py-4 flex items-center justify-between">
-        <h2 className="text-lg font-bold text-sky-500">Chat with {providerName}</h2>
-        <button className="text-gray-600 hover:text-gray-900" onClick={onClose}>
+  <div className="fixed inset-0 z-50 bg-black/40 p-0 sm:p-4">
+    <div className="flex h-[100dvh] w-full flex-col overflow-hidden bg-white shadow-2xl sm:mx-auto sm:h-[85vh] sm:w-11/12 sm:max-w-5xl sm:rounded-2xl">
+      <div className="flex shrink-0 items-center justify-between border-b px-4 py-3 sm:px-6 sm:py-4">
+        <div className="min-w-0">
+          <h2 className="truncate text-base font-bold text-teal-600 sm:text-lg">
+            Chat with {providerName}
+          </h2>
+          {booking?.serviceName && (
+            <p className="truncate text-xs text-gray-500 sm:text-sm">
+              {booking.serviceName}
+            </p>
+          )}
+        </div>
+
+        <button
+          className="ml-4 rounded-full p-2 text-gray-600 hover:bg-gray-100 hover:text-gray-900"
+          onClick={onClose}
+          aria-label="Close chat"
+        >
           <FaTimes />
         </button>
       </div>
 
-      <div className="flex-1 min-h-0 overflow-hidden">
-        <div className="h-full w-full p-4">
-          <Chat bookingId={booking?._id} token={token} userId={userId} />
+      <div className="min-h-0 flex-1 overflow-hidden">
+        <div className="h-full min-h-0 w-full p-2 sm:p-4">
+          <div className="h-full min-h-0 overflow-hidden rounded-xl border bg-white">
+            <Chat bookingId={booking?._id} token={token} userId={userId} />
+          </div>
         </div>
       </div>
     </div>
   </div>
 );
+
+const MapModal = ({ provider, onClose }) => {
+  const coords = getProviderCoords(provider);
+
+  if (!coords) {
+    return (
+      <Modal onClose={onClose} panelClassName="max-w-md">
+        <div className="p-6 pt-10 sm:p-6 sm:pt-10">
+          <h2 className="mb-3 text-xl font-bold text-teal-600">
+            {provider.basicInfo?.providerName || "Provider"} Location
+          </h2>
+          <p className="text-gray-600">
+            No saved map coordinates are available for this provider yet.
+          </p>
+          <p className="mt-2 text-sm text-gray-500">
+            {provider.basicInfo?.location || ""}
+          </p>
+        </div>
+      </Modal>
+    );
+  }
+
+  return (
+    <Modal onClose={onClose} panelClassName="max-w-md lg:max-w-md">
+      <div className="p-6 pt-10 sm:p-6 sm:pt-10">
+        <h2 className="mb-2 text-xl font-bold text-teal-600">
+          {provider.basicInfo?.providerName || "Provider"} Location
+        </h2>
+
+        {provider.basicInfo?.location && (
+          <p className="mb-3 text-sm text-gray-500">{provider.basicInfo.location}</p>
+        )}
+
+        <div className="h-72 overflow-hidden rounded-xl border">
+          <MapContainer center={[coords.lat, coords.lng]} zoom={15} className="h-full w-full">
+            <TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
+            <RecenterMap lat={coords.lat} lng={coords.lng} />
+            <Marker position={[coords.lat, coords.lng]} />
+          </MapContainer>
+        </div>
+      </div>
+    </Modal>
+  );
+};
 
 const ProviderModal = ({
   selectedProvider,
@@ -545,55 +685,123 @@ const ProviderModal = ({
   reviewsLoading,
   setBookingProvider,
   setSelectedService,
-}) => (
-  <Modal onClose={() => setSelectedProvider(null)}>
-    <div className="flex justify-center mb-3">
-      <img
-        src={selectedProvider.basicInfo?.photoURL || "https://dummyimage.com/300x300/ccc/000"}
-        alt={selectedProvider.basicInfo?.providerName || "Provider"}
-        className="w-24 h-24 rounded-full object-cover border-4 border-sky-100 shadow"
-      />
-    </div>
-    <h2 className="text-xl font-bold text-sky-500 mb-2">
-      {selectedProvider.basicInfo?.providerName}
-    </h2>
-    <StarRating rating={selectedProvider.rating} />
-    <p className="mt-2 text-sm text-gray-600">
-      Services: {selectedProvider.services?.map((s) => s.name).join(", ")}
-    </p>
-    <p className="mt-1 text-sm text-gray-600">
-      Experience: {selectedProvider.experience || 0} years
-    </p>
-    <button
-      className="bg-sky-500 text-white w-full py-2 rounded-lg mt-4"
-      onClick={() => {
-        setBookingProvider(selectedProvider);
-        setSelectedProvider(null);
-        setSelectedService("");
-      }}
-    >
-      Book Now
-    </button>
-    <div className="mt-6 text-left">
-      <h3 className="font-semibold text-sky-600 mb-3">Reviews</h3>
-      {reviewsLoading ? (
-        <p className="text-sm text-gray-500">Loading reviews...</p>
-      ) : providerReviews.length === 0 ? (
-        <p className="text-sm text-gray-500">No reviews yet.</p>
-      ) : (
-        providerReviews.map((r) => (
-          <div key={r._id} className="border rounded-lg p-2 mb-2">
-            <div className="flex justify-between items-center">
-              <p className="text-sm font-semibold">{r.customer?.name || "Anonymous"}</p>
-              <StarRating rating={r.rating} />
-            </div>
-            <p className="text-sm text-gray-500">{r.comment}</p>
+}) => {
+  const providerName =
+    selectedProvider.basicInfo?.providerName || selectedProvider.name || "Provider";
+
+  const services = selectedProvider.services || [];
+  const primaryService = services?.[0];
+  const location = selectedProvider.basicInfo?.location || "";
+  const coords = getProviderCoords(selectedProvider);
+
+  return (
+    <Modal onClose={() => setSelectedProvider(null)} panelClassName="max-w-sm sm:max-w-md">
+      <div className="mx-auto max-w-sm p-6 pt-10 sm:p-6 sm:pt-10">
+        <div className="text-center">
+          <div className="mx-auto mb-4 flex h-24 w-24 items-center justify-center rounded-full bg-teal-50 ring-4 ring-teal-100">
+            <img
+              src={
+                selectedProvider.basicInfo?.photoURL ||
+                "https://dummyimage.com/300x300/ccc/000"
+              }
+              alt={providerName}
+              className="h-24 w-24 rounded-full object-cover"
+            />
           </div>
-        ))
-      )}
-    </div>
-  </Modal>
-);
+
+          <h2 className="text-2xl font-bold text-slate-900">{providerName}</h2>
+
+          <div className="mt-2 flex items-center justify-center gap-2">
+            <StarRating rating={selectedProvider.rating} />
+            <span className="text-sm font-semibold text-slate-700">
+              {(selectedProvider.rating || 0).toFixed(1)}
+            </span>
+          </div>
+
+          <p className="mt-3 text-sm leading-6 text-slate-600">
+            {selectedProvider.experience ? `${selectedProvider.experience} years experience` : "Experience not listed"}
+          </p>
+
+          {location && <p className="mt-1 text-sm text-slate-500">{location}</p>}
+        </div>
+
+        <div className="mt-5 rounded-2xl bg-slate-50 p-4">
+          <p className="mb-3 text-sm font-semibold text-slate-700">Services</p>
+          <div className="flex flex-wrap justify-center gap-2">
+            {services.length > 0 ? (
+              services.map((s) => (
+                <span
+                  key={s._id}
+                  className="rounded-full bg-white px-3 py-1 text-xs font-medium text-slate-700 shadow-sm ring-1 ring-slate-200"
+                >
+                  {s.name}
+                </span>
+              ))
+            ) : (
+              <span className="text-sm text-slate-500">No services listed</span>
+            )}
+          </div>
+
+          {primaryService && (
+            <div className="mt-4 flex items-center justify-between rounded-xl bg-white px-4 py-3 shadow-sm ring-1 ring-slate-200">
+              <span className="text-sm text-slate-600">Starting price</span>
+              <span className="text-sm font-semibold text-teal-600">
+                {formatKES(primaryService.price || 0)}
+              </span>
+            </div>
+          )}
+        </div>
+
+        {coords && (
+          <button
+            onClick={() => {
+              setSelectedProvider(null);
+            }}
+            className="mt-4 inline-flex w-full items-center justify-center gap-2 rounded-xl bg-slate-100 px-4 py-3 text-sm font-semibold text-slate-700 transition hover:bg-slate-200"
+          >
+            <FaMapMarkerAlt />
+            Map available
+          </button>
+        )}
+
+        <button
+          className="mt-4 w-full rounded-xl bg-teal-600 px-4 py-3 font-semibold text-white transition hover:bg-teal-700"
+          onClick={() => {
+            setBookingProvider(selectedProvider);
+            setSelectedProvider(null);
+            setSelectedService("");
+          }}
+        >
+          Book Now
+        </button>
+
+        <div className="mt-6">
+          <h3 className="mb-3 text-sm font-semibold text-teal-600">Reviews</h3>
+
+          {reviewsLoading ? (
+            <p className="text-sm text-gray-500">Loading reviews...</p>
+          ) : providerReviews.length === 0 ? (
+            <p className="text-sm text-gray-500">No reviews yet.</p>
+          ) : (
+            <div className="space-y-3">
+              {providerReviews.map((r) => (
+                <div key={r._id} className="rounded-xl border border-slate-200 p-3">
+                  <div className="flex items-start justify-between gap-3">
+                    <p className="text-sm font-semibold text-slate-900">
+                      {r.customer?.name || "Anonymous"}
+                    </p>
+                    <StarRating rating={r.rating} />
+                  </div>
+                  <p className="mt-2 text-sm leading-6 text-slate-600">{r.comment}</p>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+    </Modal>
+  );
+};
 
 const BookingModal = ({
   bookingProvider,
@@ -604,68 +812,98 @@ const BookingModal = ({
   submitBooking,
   setBookingProvider,
 }) => (
-  <Modal onClose={() => setBookingProvider(null)}>
-    <h2 className="text-xl font-bold text-sky-500 mb-4">
-      Book {bookingProvider.basicInfo?.providerName}
-    </h2>
-    <input
-      type="date"
-      className="border w-full px-3 py-2 mb-2 rounded"
-      value={quickBooking.date}
-      onChange={(e) => setQuickBooking((prev) => ({ ...prev, date: e.target.value }))}
-    />
-    <input
-      type="time"
-      className="border w-full px-3 py-2 mb-2 rounded"
-      value={quickBooking.time}
-      onChange={(e) => setQuickBooking((prev) => ({ ...prev, time: e.target.value }))}
-    />
-    <input
-      type="text"
-      placeholder="Location"
-      className="border w-full px-3 py-2 mb-2 rounded"
-      value={quickBooking.location}
-      onChange={(e) => setQuickBooking((prev) => ({ ...prev, location: e.target.value }))}
-    />
-    <textarea
-      placeholder="Notes"
-      className="border w-full px-3 py-2 mb-2 rounded"
-      value={quickBooking.notes}
-      onChange={(e) => setQuickBooking((prev) => ({ ...prev, notes: e.target.value }))}
-    />
-    <select
-      className="border w-full px-3 py-2 mb-2 rounded"
-      value={selectedService}
-      onChange={(e) => setSelectedService(e.target.value)}
-    >
-      <option value="">Select Service</option>
-      {bookingProvider.services?.map((s) => (
-        <option key={s._id} value={s._id}>
-          {s.name} - ${s.price}
-        </option>
-      ))}
-    </select>
-    <button className="bg-sky-500 text-white w-full py-2 rounded" onClick={submitBooking}>
-      Confirm Booking
-    </button>
+  <Modal onClose={() => setBookingProvider(null)} panelClassName="max-w-md">
+    <div className="p-6 pt-10 sm:p-6 sm:pt-10">
+      <h2 className="mb-4 text-xl font-bold text-teal-600">
+        Book {bookingProvider.basicInfo?.providerName}
+      </h2>
+
+      <div className="space-y-3">
+        <input
+          type="date"
+          className="w-full rounded-lg border px-3 py-2"
+          value={quickBooking.date}
+          onChange={(e) =>
+            setQuickBooking((prev) => ({ ...prev, date: e.target.value }))
+          }
+        />
+        <input
+          type="time"
+          className="w-full rounded-lg border px-3 py-2"
+          value={quickBooking.time}
+          onChange={(e) =>
+            setQuickBooking((prev) => ({ ...prev, time: e.target.value }))
+          }
+        />
+        <input
+          type="text"
+          placeholder="Location"
+          className="w-full rounded-lg border px-3 py-2"
+          value={quickBooking.location}
+          onChange={(e) =>
+            setQuickBooking((prev) => ({ ...prev, location: e.target.value }))
+          }
+        />
+        <textarea
+          placeholder="Notes"
+          className="w-full rounded-lg border px-3 py-2"
+          value={quickBooking.notes}
+          onChange={(e) =>
+            setQuickBooking((prev) => ({ ...prev, notes: e.target.value }))
+          }
+        />
+        <select
+          className="w-full rounded-lg border px-3 py-2"
+          value={selectedService}
+          onChange={(e) => setSelectedService(e.target.value)}
+        >
+          <option value="">Select Service</option>
+          {bookingProvider.services?.map((s) => (
+            <option key={s._id} value={s._id}>
+              {s.name} - {formatKES(s.price)}
+            </option>
+          ))}
+        </select>
+
+        <button
+          className="w-full rounded-lg bg-teal-600 py-3 font-semibold text-white transition hover:bg-teal-700"
+          onClick={submitBooking}
+        >
+          Confirm Booking
+        </button>
+      </div>
+    </div>
   </Modal>
 );
 
-const ReviewModal = ({ reviewBooking, reviewData, setReviewData, submitReview, setReviewBooking }) => (
-  <Modal onClose={() => setReviewBooking(null)}>
-    <h2 className="text-xl font-bold text-sky-500 mb-4">Review {reviewBooking.serviceName}</h2>
-    <StarRatingSelector
-      rating={reviewData.rating}
-      setRating={(r) => setReviewData((prev) => ({ ...prev, rating: r }))}
-    />
-    <textarea
-      placeholder="Comment"
-      className="border w-full px-3 py-2 mb-2 rounded"
-      value={reviewData.comment}
-      onChange={(e) => setReviewData((prev) => ({ ...prev, comment: e.target.value }))}
-    />
-    <button className="bg-sky-500 text-white w-full py-2 rounded" onClick={submitReview}>
-      Submit Review
-    </button>
+const ReviewModal = ({
+  reviewBooking,
+  reviewData,
+  setReviewData,
+  submitReview,
+  setReviewBooking,
+}) => (
+  <Modal onClose={() => setReviewBooking(null)} panelClassName="max-w-md">
+    <div className="p-6 pt-10 sm:p-6 sm:pt-10">
+      <h2 className="mb-4 text-xl font-bold text-teal-600">
+        Review {reviewBooking.serviceName}
+      </h2>
+      <StarRatingSelector
+        rating={reviewData.rating}
+        setRating={(r) => setReviewData((prev) => ({ ...prev, rating: r }))}
+      />
+      <textarea
+        placeholder="Comment"
+        className="w-full rounded-lg border px-3 py-2"
+        value={reviewData.comment}
+        onChange={(e) => setReviewData((prev) => ({ ...prev, comment: e.target.value }))}
+      />
+      <button
+        className="mt-3 w-full rounded-lg bg-teal-600 py-3 font-semibold text-white transition hover:bg-teal-700"
+        onClick={submitReview}
+      >
+        Submit Review
+      </button>
+    </div>
   </Modal>
 );
