@@ -13,6 +13,7 @@ import { fileURLToPath } from "url";
 import http from "http";
 
 import connectDB from "./config/db.js";
+import { initSocket } from "./sockets/socket.js";
 
 /* ======================
    Connect Database
@@ -60,6 +61,7 @@ const communityRoutes = (await import("./routes/communityRoutes.js")).default;
 const searchProxy = (await import("./routes/searchProxy.js")).default;
 const reviewRoutes = (await import("./routes/reviewRoutes.js")).default;
 const chatRoutes = (await import("./routes/chatRoutes.js")).default;
+const adminRoutes = (await import("./routes/adminRoutes.js")).default;
 
 /* ======================
    API Routes
@@ -70,7 +72,8 @@ app.use("/api/services", serviceRoutes);
 app.use("/api/bookings", bookingRoutes);
 app.use("/api/reviews", reviewRoutes);
 app.use("/api/community", communityRoutes);
-app.use("/api/chat", chatRoutes); // ✅ Chat REST API
+app.use("/api/chat", chatRoutes);
+app.use("/api/admin", adminRoutes); // ✅ Added admin routes here
 app.use("/api", searchProxy);
 
 /* ======================
@@ -108,8 +111,6 @@ app.use((err, req, res, next) => {
 /* ======================
    Start Server with Socket.io
 ====================== */
-import { initSocket } from "./sockets/socket.js";
-
 const PORT = process.env.PORT || 5000;
 
 // Use native http server to attach socket.io

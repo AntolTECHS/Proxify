@@ -5,8 +5,9 @@ import ProtectedRoute from "./components/ProtectedRoute.jsx";
 /* Layouts */
 import ProviderLayout from "./layouts/ProviderLayout.jsx";
 import CustomerLayout from "./layouts/CustomerLayout.jsx";
+import AdminLayout from "./layouts/AdminLayout.jsx";
 
-/* Public */
+/* Public Pages */
 import Home from "./pages/Home.jsx";
 import AboutUs from "./pages/AboutUs.jsx";
 
@@ -14,22 +15,25 @@ import AboutUs from "./pages/AboutUs.jsx";
 import Login from "./components/Auth/Login.jsx";
 import Register from "./components/Auth/Register.jsx";
 
-/* Provider */
+/* Provider Pages */
 import ProviderDashboard from "./pages/provider/ProviderDashboard.jsx";
+import ProviderJobs from "./pages/provider/ProviderJobs.jsx";
 import ProviderCommunity from "./pages/provider/ProviderCommunity.jsx";
+import ProviderSettings from "./pages/provider/ProviderSettings.jsx";
 import ProviderOnboarding from "./pages/provider/ProviderOnboarding.jsx";
 import ProviderPending from "./pages/provider/ProviderPending.jsx";
-import ProviderJobs from "./pages/provider/ProviderJobs.jsx";
-import ProviderSettings from "./pages/provider/ProviderSettings.jsx";
 
-/* Customer */
+/* Customer Pages */
 import CustomerDashboard from "./pages/Customer/CustomerDashboard.jsx";
 import CustomerBookings from "./pages/Customer/CustomerBookings.jsx";
 import CustomerProviders from "./pages/Customer/CustomerProviders.jsx";
 import CustomerProfile from "./pages/Customer/CustomerProfile.jsx";
 
-/* Admin */
-import AdminPanel from "./pages/Admin/AdminDashboard.jsx";
+/* Admin Pages */
+import AdminDashboard from "./pages/Admin/AdminDashboard.jsx";
+import AdminProviders from "./pages/Admin/AdminProviders.jsx";
+import AdminBookings from "./pages/Admin/AdminBookings.jsx";
+import AdminProfile from "./pages/Admin/AdminProfile.jsx";
 
 export default function App() {
   return (
@@ -41,6 +45,9 @@ export default function App() {
       {/* ---------- AUTH ---------- */}
       <Route path="/login" element={<Login />} />
       <Route path="/register" element={<Register />} />
+
+      {/* ---------- LEGACY / SAFETY REDIRECTS ---------- */}
+      <Route path="/admin/panel" element={<Navigate to="/admin/dashboard" replace />} />
 
       {/* ---------- BECOME PROVIDER ---------- */}
       <Route
@@ -63,59 +70,20 @@ export default function App() {
       />
 
       <Route
-        path="/provider/dashboard"
+        path="/provider"
         element={
           <ProtectedRoute role="provider">
-            <ProviderLayout>
-              <ProviderDashboard />
-            </ProviderLayout>
+            <ProviderLayout />
           </ProtectedRoute>
         }
-      />
-
-      <Route
-        path="/provider/jobs"
-        element={
-          <ProtectedRoute role="provider">
-            <ProviderLayout>
-              <ProviderJobs />
-            </ProviderLayout>
-          </ProtectedRoute>
-        }
-      />
-
-      <Route
-        path="/provider/community"
-        element={
-          <ProtectedRoute role="provider">
-            <ProviderLayout>
-              <ProviderCommunity />
-            </ProviderLayout>
-          </ProtectedRoute>
-        }
-      />
-
-      <Route
-        path="/provider/settings"
-        element={
-          <ProtectedRoute role="provider">
-            <ProviderLayout>
-              <ProviderSettings />
-            </ProviderLayout>
-          </ProtectedRoute>
-        }
-      />
-
-      <Route
-        path="/provider/pending"
-        element={
-          <ProtectedRoute role="provider">
-            <ProviderLayout>
-              <ProviderPending />
-            </ProviderLayout>
-          </ProtectedRoute>
-        }
-      />
+      >
+        <Route index element={<Navigate to="/provider/dashboard" replace />} />
+        <Route path="dashboard" element={<ProviderDashboard />} />
+        <Route path="jobs" element={<ProviderJobs />} />
+        <Route path="community" element={<ProviderCommunity />} />
+        <Route path="settings" element={<ProviderSettings />} />
+        <Route path="pending" element={<ProviderPending />} />
+      </Route>
 
       {/* ---------- CUSTOMER ---------- */}
       <Route
@@ -126,6 +94,7 @@ export default function App() {
           </ProtectedRoute>
         }
       >
+        <Route index element={<Navigate to="/customer/dashboard" replace />} />
         <Route path="dashboard" element={<CustomerDashboard />} />
         <Route path="bookings" element={<CustomerBookings />} />
         <Route path="providers" element={<CustomerProviders />} />
@@ -134,13 +103,19 @@ export default function App() {
 
       {/* ---------- ADMIN ---------- */}
       <Route
-        path="/admin/panel"
+        path="/admin"
         element={
           <ProtectedRoute role="admin">
-            <AdminPanel />
+            <AdminLayout />
           </ProtectedRoute>
         }
-      />
+      >
+        <Route index element={<Navigate to="/admin/dashboard" replace />} />
+        <Route path="dashboard" element={<AdminDashboard />} />
+        <Route path="providers" element={<AdminProviders />} />
+        <Route path="bookings" element={<AdminBookings />} />
+        <Route path="profile" element={<AdminProfile />} />
+      </Route>
 
       {/* ---------- FALLBACK ---------- */}
       <Route path="*" element={<Navigate to="/" replace />} />

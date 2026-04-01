@@ -4,7 +4,7 @@ import { useAuth } from "../../context/AuthContext.jsx";
 import { FaEye, FaEyeSlash } from "react-icons/fa";
 
 export default function Login() {
-  const { login, user, status, error } = useAuth();
+  const { login, user, status, error, isLoading } = useAuth();
   const navigate = useNavigate();
 
   const [email, setEmail] = useState("");
@@ -13,17 +13,38 @@ export default function Login() {
 
   // Redirect logged-in users to their dashboard
   useEffect(() => {
-    if (!user) return;
+    if (isLoading) return; // Wait until auth state is loaded
+    if (!user) return;      // Only redirect if logged in
 
-    if (user.role === "provider") navigate("/provider/dashboard", { replace: true });
-    else if (user.role === "customer") navigate("/customer/dashboard", { replace: true });
-    else if (user.role === "admin") navigate("/admin/panel", { replace: true });
-  }, [user, navigate]);
+    switch (user.role) {
+      case "provider":
+        navigate("/provider/dashboard", { replace: true });
+        break;
+      case "customer":
+        navigate("/customer/dashboard", { replace: true });
+        break;
+      case "admin":
+        navigate("/admin/panel", { replace: true });
+        break;
+      default:
+        navigate("/", { replace: true });
+        break;
+    }
+  }, [user, isLoading, navigate]);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
     await login({ email, password });
   };
+
+  // Show loading screen if auth is initializing
+  if (isLoading) {
+    return (
+      <div className="flex h-screen w-full items-center justify-center text-gray-600">
+        Loading...
+      </div>
+    );
+  }
 
   return (
     <div className="flex justify-center items-center min-h-screen bg-gray-50 p-4">

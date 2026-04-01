@@ -5,7 +5,7 @@ import jwt from "jsonwebtoken";
 const JWT_EXPIRES_IN = process.env.JWT_EXPIRES_IN || "7d";
 const JWT_SECRET = process.env.JWT_SECRET || "servlinksecret";
 
-// ❌ DO NOT throw here — server must boot even if env is wrong
+// Generate JWT token
 const generateToken = (userId) => {
   if (!JWT_SECRET) {
     throw new Error("JWT_SECRET missing");
@@ -13,34 +13,25 @@ const generateToken = (userId) => {
   return jwt.sign({ id: userId }, JWT_SECRET, { expiresIn: JWT_EXPIRES_IN });
 };
 
-/* ================== REGISTER ================== */
+// ================== REGISTER ==================
 export const register = async (req, res) => {
   try {
     const { name, email, password, role, phone } = req.body;
 
     if (!name || !email || !password) {
-      return res.status(400).json({
-        success: false,
-        message: "Name, email and password are required",
-      });
+      return res.status(400).json({ success: false, message: "Name, email and password are required" });
     }
 
     const normalizedEmail = email.toLowerCase().trim();
     const finalRole = role === "provider" ? "provider" : "customer";
 
     if (finalRole === "provider" && !phone) {
-      return res.status(400).json({
-        success: false,
-        message: "Phone is required for providers",
-      });
+      return res.status(400).json({ success: false, message: "Phone is required for providers" });
     }
 
     const existingUser = await User.findOne({ email: normalizedEmail });
     if (existingUser) {
-      return res.status(400).json({
-        success: false,
-        message: "User already exists",
-      });
+      return res.status(400).json({ success: false, message: "User already exists" });
     }
 
     const user = await User.create({
@@ -57,35 +48,29 @@ export const register = async (req, res) => {
       success: true,
       token,
       user: {
-        id: user._id,
+        id: user._id.toString(),
         name: user.name,
         email: user.email,
-        role: user.role,
+        role: user.role.toLowerCase(), // ✅ ensure lowercase
         phone: user.phone || null,
       },
     });
   } catch (error) {
     console.error("REGISTER ERROR:", error);
-    res.status(500).json({
-      success: false,
-      message: error.message || "Registration failed",
-    });
+    res.status(500).json({ success: false, message: error.message || "Registration failed" });
   }
 };
 
-/* ================== LOGIN ================== */
+// ================== LOGIN ==================
 export const login = async (req, res) => {
   try {
     const { email, password } = req.body;
-
     const normalizedEmail = email.toLowerCase().trim();
+
     const user = await User.findOne({ email: normalizedEmail }).select("+password");
 
     if (!user || !(await user.matchPassword(password))) {
-      return res.status(400).json({
-        success: false,
-        message: "Invalid credentials",
-      });
+      return res.status(400).json({ success: false, message: "Invalid credentials" });
     }
 
     const token = generateToken(user._id);
@@ -94,18 +79,15 @@ export const login = async (req, res) => {
       success: true,
       token,
       user: {
-        id: user._id,
+        id: user._id.toString(),
         name: user.name,
         email: user.email,
-        role: user.role,
+        role: user.role.toLowerCase(), // ✅ ensure lowercase
         phone: user.phone || null,
       },
     });
   } catch (error) {
     console.error("LOGIN ERROR:", error);
-    res.status(500).json({
-      success: false,
-      message: error.message || "Login failed",
-    });
+    res.status(500).json({ success: false, message: error.message || "Login failed" });
   }
 };

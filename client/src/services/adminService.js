@@ -1,23 +1,29 @@
 const API_URL = import.meta.env.VITE_API_URL || "http://localhost:5000/api";
 
 /* =========================
-   Helper
+   Core request helper
 ========================= */
-const handleResponse = async (res) => {
+const request = async (url, { method = "GET", token, body } = {}) => {
+  const headers = {
+    ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    ...(body ? { "Content-Type": "application/json" } : {}),
+  };
+
+  const res = await fetch(url, {
+    method,
+    headers,
+    ...(body ? { body: JSON.stringify(body) } : {}),
+  });
+
   const contentType = res.headers.get("content-type") || "";
   const data = contentType.includes("application/json") ? await res.json() : {};
 
   if (!res.ok) {
-    throw new Error(data.message || "Something went wrong");
+    throw new Error(data.message || `Request failed with status ${res.status}`);
   }
 
   return data;
 };
-
-const authHeaders = (token, json = false) => ({
-  Authorization: `Bearer ${token}`,
-  ...(json ? { "Content-Type": "application/json" } : {}),
-});
 
 /* =========================
    Admin Service
@@ -25,121 +31,78 @@ const authHeaders = (token, json = false) => ({
 export const adminService = {
   /* ================= SUMMARY ================= */
   getSummary: async (token) => {
-    const res = await fetch(`${API_URL}/admin/summary`, {
-      headers: authHeaders(token),
-    });
-
-    const data = await handleResponse(res);
+    const data = await request(`${API_URL}/admin/summary`, { token });
     return data.summary;
   },
 
   /* ================= USERS ================= */
   getUsers: async (token) => {
-    const res = await fetch(`${API_URL}/admin/users`, {
-      headers: authHeaders(token),
-    });
-
-    const data = await handleResponse(res);
+    const data = await request(`${API_URL}/admin/users`, { token });
     return data.users;
   },
 
   /* ================= PROVIDERS ================= */
   getProviders: async (token) => {
-    const res = await fetch(`${API_URL}/admin/providers`, {
-      headers: authHeaders(token),
-    });
-
-    const data = await handleResponse(res);
-    return data.providers;
-  },
-
-  getPendingProviders: async (token) => {
-    const res = await fetch(`${API_URL}/admin/providers/pending`, {
-      headers: authHeaders(token),
-    });
-
-    const data = await handleResponse(res);
+    const data = await request(`${API_URL}/admin/providers`, { token });
     return data.providers;
   },
 
   approveProvider: async (id, token) => {
-    const res = await fetch(`${API_URL}/admin/providers/${id}/approve`, {
+    const data = await request(`${API_URL}/admin/providers/${id}/approve`, {
       method: "PUT",
-      headers: authHeaders(token),
+      token,
     });
-
-    const data = await handleResponse(res);
     return data.provider;
   },
 
   rejectProvider: async (id, notes, token) => {
-    const res = await fetch(`${API_URL}/admin/providers/${id}/reject`, {
+    const data = await request(`${API_URL}/admin/providers/${id}/reject`, {
       method: "PUT",
-      headers: authHeaders(token, true),
-      body: JSON.stringify({ notes }),
+      token,
+      body: { notes },
     });
-
-    const data = await handleResponse(res);
     return data.provider;
   },
 
   /* ================= BOOKINGS ================= */
   getBookings: async (token) => {
-    const res = await fetch(`${API_URL}/admin/bookings`, {
-      headers: authHeaders(token),
-    });
-
-    const data = await handleResponse(res);
+    const data = await request(`${API_URL}/admin/bookings`, { token });
     return data.bookings;
   },
 
   getBookingAnalytics: async (token) => {
-    const res = await fetch(`${API_URL}/admin/analytics/bookings-per-day`, {
-      headers: authHeaders(token),
+    const data = await request(`${API_URL}/admin/analytics/bookings-per-day`, {
+      token,
     });
-
-    const data = await handleResponse(res);
     return data.data;
   },
 
   updateBookingStatus: async (id, status, token) => {
-    const res = await fetch(`${API_URL}/admin/bookings/${id}/status`, {
+    const data = await request(`${API_URL}/admin/bookings/${id}/status`, {
       method: "PUT",
-      headers: authHeaders(token, true),
-      body: JSON.stringify({ status }),
+      token,
+      body: { status },
     });
-
-    const data = await handleResponse(res);
     return data.booking;
   },
 
   deleteBooking: async (id, token) => {
-    const res = await fetch(`${API_URL}/admin/bookings/${id}`, {
+    return request(`${API_URL}/admin/bookings/${id}`, {
       method: "DELETE",
-      headers: authHeaders(token),
+      token,
     });
-
-    const data = await handleResponse(res);
-    return data;
   },
 
   /* ================= SERVICES ================= */
   getServices: async (token) => {
-    const res = await fetch(`${API_URL}/admin/services`, {
-      headers: authHeaders(token),
-    });
-
-    const data = await handleResponse(res);
+    const data = await request(`${API_URL}/admin/services`, { token });
     return data.services;
   },
 
   deleteService: async (id, token) => {
-    const res = await fetch(`${API_URL}/admin/services/${id}`, {
+    return request(`${API_URL}/admin/services/${id}`, {
       method: "DELETE",
-      headers: authHeaders(token),
+      token,
     });
-
-    const data = await handleResponse(res);
-    return data;
   },
 };
