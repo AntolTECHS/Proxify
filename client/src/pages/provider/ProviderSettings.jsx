@@ -1,12 +1,5 @@
-// ProviderSettings.jsx
 import { useState, useEffect, useRef } from "react";
-import {
-  FaUser,
-  FaMapMarkerAlt,
-  FaCamera,
-  FaFileAlt,
-  FaSearch,
-} from "react-icons/fa";
+import { FaUser, FaMapMarkerAlt, FaCamera, FaFileAlt, FaSearch } from "react-icons/fa";
 import { MapContainer, TileLayer, Marker, useMap } from "react-leaflet";
 import L from "leaflet";
 import { geocodingClient } from "../../utils/mapboxClient";
@@ -15,7 +8,6 @@ import markerIcon2x from "leaflet/dist/images/marker-icon-2x.png";
 import markerIcon from "leaflet/dist/images/marker-icon.png";
 import markerShadow from "leaflet/dist/images/marker-shadow.png";
 
-// Fix Leaflet default marker icons
 delete L.Icon.Default.prototype._getIconUrl;
 L.Icon.Default.mergeOptions({
   iconRetinaUrl: markerIcon2x,
@@ -23,10 +15,10 @@ L.Icon.Default.mergeOptions({
   shadowUrl: markerShadow,
 });
 
+const API_BASE = "http://localhost:5000";
 const FALLBACK_LAT = -1.286389;
 const FALLBACK_LNG = 36.817223;
 
-// ---------------- RecenterMap ----------------
 function RecenterMap({ lat, lng }) {
   const map = useMap();
 
@@ -39,7 +31,45 @@ function RecenterMap({ lat, lng }) {
   return null;
 }
 
-// ---------------- ProviderSettings ----------------
+function resolveFileUrl(filePath) {
+  if (!filePath) return "";
+  if (filePath.startsWith("http://") || filePath.startsWith("https://")) return filePath;
+  return `${API_BASE}${filePath.startsWith("/") ? "" : "/"}${filePath}`;
+}
+
+function formatFileSize(size) {
+  if (!size && size !== 0) return "Unknown size";
+  const kb = size / 1024;
+  if (kb < 1024) return `${Math.round(kb)} KB`;
+  return `${(kb / 1024).toFixed(1)} MB`;
+}
+
+function InputField({ label, value, onChange, disabled }) {
+  return (
+    <div>
+      <label className="text-sm capitalize">{label}</label>
+      <input
+        value={value || ""}
+        disabled={disabled}
+        onChange={(e) => onChange(e.target.value)}
+        className="w-full rounded border p-2"
+      />
+    </div>
+  );
+}
+
+function Section({ title, icon, children }) {
+  return (
+    <div className="space-y-4 rounded-xl bg-white p-5 shadow">
+      <div className="flex gap-2 font-semibold text-sky-600">
+        {icon}
+        {title}
+      </div>
+      {children}
+    </div>
+  );
+}
+
 export default function ProviderSettings() {
   const [editing, setEditing] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -55,11 +85,11 @@ export default function ProviderSettings() {
       email: "",
       phone: "",
       businessName: "",
-      bio: "",
       location: "",
       photoURL: "",
       photoFile: null,
     },
+    bio: "",
     lat: FALLBACK_LAT,
     lng: FALLBACK_LNG,
     services: [],
@@ -67,7 +97,6 @@ export default function ProviderSettings() {
     locationGeoJSON: { type: "Point", coordinates: [FALLBACK_LNG, FALLBACK_LAT] },
   });
 
-  // ---------------- Fetch Profile ----------------
   useEffect(() => {
     fetchProfile();
     return () => searchTimeout.current && clearTimeout(searchTimeout.current);
@@ -81,7 +110,7 @@ export default function ProviderSettings() {
       const token = localStorage.getItem("token");
       if (!token) throw new Error("Please log in again.");
 
-      const res = await fetch("http://localhost:5000/api/providers/me", {
+      const res = await fetch(`${API_BASE}/api/providers/me`, {
         headers: { Authorization: `Bearer ${token}` },
       });
 
@@ -102,21 +131,27 @@ export default function ProviderSettings() {
         email: data?.basicInfo?.email || "",
         phone: data?.basicInfo?.phone || "",
         businessName: data?.basicInfo?.businessName || "",
-        bio: data?.basicInfo?.bio || "",
         location: data?.basicInfo?.location || "",
-        photoURL: data?.basicInfo?.photoURL || "",
+        photoURL: resolveFileUrl(data?.basicInfo?.photoURL || ""),
         photoFile: null,
       };
 
+      const bio = data?.bio || "";
+
       const services = Array.isArray(data?.services) ? data.services : [];
       const documents = Array.isArray(data?.documents)
-        ? data.documents.map((d) => ({ ...d, file: null }))
+        ? data.documents.map((d) => ({
+            ...d,
+            path: resolveFileUrl(d.path),
+            file: null,
+          }))
         : [];
 
       let lat = data?.location?.coordinates?.[1];
       let lng = data?.location?.coordinates?.[0];
 
-      const validCoords = Number.isFinite(lat) && Number.isFinite(lng) && !(lat === 0 && lng === 0);
+      const validCoords =
+        Number.isFinite(lat) && Number.isFinite(lng) && !(lat === 0 && lng === 0);
 
       if (!validCoords && basicInfo.location) {
         try {
@@ -141,6 +176,7 @@ export default function ProviderSettings() {
 
       setProfile({
         basicInfo,
+        bio,
         lat,
         lng,
         services,
@@ -157,7 +193,6 @@ export default function ProviderSettings() {
     }
   };
 
-  // ---------------- Save Profile ----------------
   const handleSave = async () => {
     try {
       setLoading(true);
@@ -170,14 +205,18 @@ export default function ProviderSettings() {
       const { photoFile, ...basicInfo } = profile.basicInfo;
 
       formData.append("basicInfo", JSON.stringify(basicInfo));
+      formData.append("bio", profile.bio || "");
       formData.append("services", JSON.stringify(profile.services || []));
       formData.append("lat", String(profile.lat));
       formData.append("lng", String(profile.lng));
 
       if (photoFile) formData.append("photo", photoFile);
-      (profile.documents || []).filter((d) => d.file).forEach((d) => formData.append("files", d.file));
 
-      const res = await fetch("http://localhost:5000/api/providers/update", {
+      (profile.documents || [])
+        .filter((d) => d.file)
+        .forEach((d) => formData.append("files", d.file));
+
+      const res = await fetch(`${API_BASE}/api/providers/update`, {
         method: "PUT",
         headers: { Authorization: `Bearer ${token}` },
         body: formData,
@@ -200,20 +239,26 @@ export default function ProviderSettings() {
           email: updated?.basicInfo?.email || "",
           phone: updated?.basicInfo?.phone || "",
           businessName: updated?.basicInfo?.businessName || "",
-          bio: updated?.basicInfo?.bio || "",
           location: updated?.basicInfo?.location || "",
-          photoURL: updated?.basicInfo?.photoURL || "",
+          photoURL: resolveFileUrl(updated?.basicInfo?.photoURL || ""),
           photoFile: null,
         },
-        lat: Number.isFinite(updatedLat) && !(updatedLat === 0 && updatedLng === 0)
-          ? updatedLat
-          : profile.lat,
-        lng: Number.isFinite(updatedLng) && !(updatedLat === 0 && updatedLng === 0)
-          ? updatedLng
-          : profile.lng,
+        bio: updated?.bio || "",
+        lat:
+          Number.isFinite(updatedLat) && !(updatedLat === 0 && updatedLng === 0)
+            ? updatedLat
+            : profile.lat,
+        lng:
+          Number.isFinite(updatedLng) && !(updatedLat === 0 && updatedLng === 0)
+            ? updatedLng
+            : profile.lng,
         services: Array.isArray(updated?.services) ? updated.services : [],
         documents: Array.isArray(updated?.documents)
-          ? updated.documents.map((d) => ({ ...d, file: null }))
+          ? updated.documents.map((d) => ({
+              ...d,
+              path: resolveFileUrl(d.path),
+              file: null,
+            }))
           : [],
         locationGeoJSON: updated?.location || profile.locationGeoJSON,
       });
@@ -229,7 +274,6 @@ export default function ProviderSettings() {
     }
   };
 
-  // ---------------- Mapbox Autocomplete ----------------
   const handleSearchChange = (value) => {
     setSearchQuery(value);
 
@@ -247,6 +291,7 @@ export default function ProviderSettings() {
             types: ["region", "place", "locality", "neighborhood", "address"],
           })
           .send();
+
         setSuggestions(res?.body?.features || []);
       } catch {
         setSuggestions([]);
@@ -270,7 +315,6 @@ export default function ProviderSettings() {
     setSuggestions([]);
   };
 
-  // ---------------- Services ----------------
   const addService = () =>
     setProfile((prev) => ({
       ...prev,
@@ -288,18 +332,21 @@ export default function ProviderSettings() {
     });
   };
 
-  // ---------------- Documents ----------------
   const addDocuments = (files) => {
     const newDocs = Array.from(files || []).map((f) => ({
       name: f.name,
       size: f.size,
       type: f.type,
       file: f,
+      path: "",
     }));
-    setProfile((prev) => ({ ...prev, documents: [...(prev.documents || []), ...newDocs] }));
+
+    setProfile((prev) => ({
+      ...prev,
+      documents: [...(prev.documents || []), ...newDocs],
+    }));
   };
 
-  // ---------------- Reverse Geocode ----------------
   const handleMarkerDrag = async (lat, lng) => {
     setProfile((prev) => ({
       ...prev,
@@ -325,29 +372,31 @@ export default function ProviderSettings() {
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-100 to-slate-200 p-6">
-      <div className="max-w-6xl mx-auto space-y-6">
-        {/* Header */}
-        <div className="flex justify-between items-center">
+      <div className="mx-auto max-w-6xl space-y-6">
+        <div className="flex items-center justify-between">
           <h1 className="text-3xl font-bold">Provider Settings</h1>
           <button
             onClick={() => setEditing((v) => !v)}
-            className="bg-sky-600 text-white px-5 py-2 rounded-lg"
+            className="rounded-lg bg-sky-600 px-5 py-2 text-white"
           >
             {editing ? "Cancel" : "Edit"}
           </button>
         </div>
 
-        {successMsg && <div className="bg-green-100 p-3 rounded">{successMsg}</div>}
-        {errorMsg && <div className="bg-red-100 p-3 rounded">{errorMsg}</div>}
+        {successMsg && <div className="rounded bg-green-100 p-3">{successMsg}</div>}
+        {errorMsg && <div className="rounded bg-red-100 p-3">{errorMsg}</div>}
 
-        {/* Profile Section */}
         <Section title="Profile" icon={<FaUser />}>
           <div className="flex items-center gap-6">
-            <div className="w-24 h-24 rounded-full overflow-hidden bg-gray-100">
+            <div className="h-24 w-24 overflow-hidden rounded-full bg-gray-100">
               {profile.basicInfo.photoURL ? (
-                <img src={profile.basicInfo.photoURL} alt="Profile" className="w-full h-full object-cover" />
+                <img
+                  src={profile.basicInfo.photoURL}
+                  alt="Profile"
+                  className="h-full w-full object-cover"
+                />
               ) : (
-                <div className="flex items-center justify-center h-full">
+                <div className="flex h-full items-center justify-center">
                   <FaCamera />
                 </div>
               )}
@@ -362,43 +411,60 @@ export default function ProviderSettings() {
                   if (!file) return;
                   setProfile((prev) => ({
                     ...prev,
-                    basicInfo: { ...prev.basicInfo, photoFile: file, photoURL: URL.createObjectURL(file) },
+                    basicInfo: {
+                      ...prev.basicInfo,
+                      photoFile: file,
+                      photoURL: URL.createObjectURL(file),
+                    },
                   }));
                 }}
               />
             )}
           </div>
 
-          <div className="grid md:grid-cols-2 gap-4 mt-4">
+          <div className="mt-4 grid gap-4 md:grid-cols-2">
             {["providerName", "businessName", "email", "phone", "location"].map((field) => (
               <InputField
                 key={field}
                 label={field}
                 value={profile.basicInfo[field]}
                 disabled={!editing}
-                onChange={(v) => setProfile((prev) => ({ ...prev, basicInfo: { ...prev.basicInfo, [field]: v } }))}
+                onChange={(v) =>
+                  setProfile((prev) => ({
+                    ...prev,
+                    basicInfo: { ...prev.basicInfo, [field]: v },
+                  }))
+                }
               />
             ))}
           </div>
 
-          <textarea
-            value={profile.basicInfo.bio}
-            disabled={!editing}
-            onChange={(e) => setProfile((prev) => ({ ...prev, basicInfo: { ...prev.basicInfo, bio: e.target.value } }))}
-            className="w-full border p-2 rounded mt-3"
-            placeholder="Bio"
-          />
+          <div className="mt-3">
+            <label className="text-sm capitalize">Bio</label>
+            <textarea
+              value={profile.bio}
+              disabled={!editing}
+              onChange={(e) => setProfile((prev) => ({ ...prev, bio: e.target.value }))}
+              className="mt-1 w-full rounded border p-2"
+              placeholder="Bio"
+              rows={4}
+            />
+          </div>
         </Section>
 
-        {/* Services Section */}
         <Section title="Services" icon={<FaFileAlt />}>
           {(profile.services || []).map((s, i) => (
-            <div key={i} className="grid md:grid-cols-3 gap-3 mb-3">
-              <InputField label="Name" value={s.name} disabled={!editing} onChange={(v) => updateService(i, "name", v)} />
+            <div key={i} className="mb-3 grid gap-3 md:grid-cols-3">
+              <InputField
+                label="Name"
+                value={s.name}
+                disabled={!editing}
+                onChange={(v) => updateService(i, "name", v)}
+              />
               <div>
                 <label className="text-sm capitalize">Price (KSh)</label>
-                <div className="flex items-center border p-2 rounded bg-white">
-                  <span className="text-gray-500 pr-2">KSh</span>
+                <div className="flex items-center rounded border bg-white p-2">
+                  <span className="pr-2 text-gray-500">KSh</span>
                   <input
                     type="number"
                     min="0"
@@ -407,22 +473,27 @@ export default function ProviderSettings() {
                     value={s.price === "" ? "" : s.price}
                     disabled={!editing}
                     onChange={(e) => updateService(i, "price", e.target.value)}
-                    className="w-full outline-none bg-transparent"
+                    className="w-full bg-transparent outline-none"
                     placeholder="Enter amount"
                   />
                 </div>
               </div>
-              <InputField label="Description" value={s.description} disabled={!editing} onChange={(v) => updateService(i, "description", v)} />
+              <InputField
+                label="Description"
+                value={s.description}
+                disabled={!editing}
+                onChange={(v) => updateService(i, "description", v)}
+              />
             </div>
           ))}
+
           {editing && (
-            <button onClick={addService} className="bg-green-500 text-white px-4 py-2 rounded">
+            <button onClick={addService} className="rounded bg-green-500 px-4 py-2 text-white">
               Add Service
             </button>
           )}
         </Section>
 
-        {/* Documents Section */}
         <Section title="Documents" icon={<FaFileAlt />}>
           <div className="space-y-3">
             {(profile.documents || []).length === 0 ? (
@@ -430,28 +501,49 @@ export default function ProviderSettings() {
             ) : (
               <div className="space-y-2">
                 {profile.documents.map((doc, idx) => (
-                  <div key={idx} className="flex items-center justify-between border rounded p-3 bg-gray-50">
+                  <div
+                    key={`${doc.name || "doc"}-${idx}`}
+                    className="flex items-center justify-between rounded border bg-gray-50 p-3"
+                  >
                     <div>
                       <p className="font-medium">{doc.name}</p>
                       <p className="text-xs text-gray-500">
-                        {doc.type || "File"} • {doc.size ? `${Math.round(doc.size / 1024)} KB` : "Unknown size"}
+                        {doc.type || "File"} • {formatFileSize(doc.size)}
                       </p>
                     </div>
-                    {doc.path && !doc.file && (
-                      <a href={doc.path} target="_blank" rel="noreferrer" className="text-sky-600 text-sm underline">
+
+                    {doc.path && (
+                      <a
+                        href={doc.path}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="text-sky-600 text-sm underline"
+                      >
                         Open
                       </a>
                     )}
-                    {doc.file && <span className="text-xs bg-yellow-100 text-yellow-800 px-2 py-1 rounded">New</span>}
+
+                    {doc.file && (
+                      <span className="rounded bg-yellow-100 px-2 py-1 text-xs text-yellow-800">
+                        New
+                      </span>
+                    )}
                   </div>
                 ))}
               </div>
             )}
-            {editing && <input type="file" multiple onChange={(e) => addDocuments(e.target.files)} className="block w-full text-sm" />}
+
+            {editing && (
+              <input
+                type="file"
+                multiple
+                onChange={(e) => addDocuments(e.target.files)}
+                className="block w-full text-sm"
+              />
+            )}
           </div>
         </Section>
 
-        {/* Map Section */}
         <Section title="Location" icon={<FaMapMarkerAlt />}>
           {editing && (
             <div className="relative mb-3">
@@ -459,17 +551,26 @@ export default function ProviderSettings() {
                 <input
                   value={searchQuery}
                   onChange={(e) => handleSearchChange(e.target.value)}
-                  className="border p-2 w-full rounded"
+                  className="w-full rounded border p-2"
                   placeholder="Search location"
                 />
-                <button onClick={() => suggestions[0] && selectSuggestion(suggestions[0])} className="bg-sky-500 text-white px-4 py-2 rounded flex items-center gap-1" type="button">
+                <button
+                  onClick={() => suggestions[0] && selectSuggestion(suggestions[0])}
+                  className="flex items-center gap-1 rounded bg-sky-500 px-4 py-2 text-white"
+                  type="button"
+                >
                   <FaSearch /> Search
                 </button>
               </div>
+
               {suggestions.length > 0 && (
-                <ul className="absolute bg-white border w-full mt-1 max-h-60 overflow-auto z-50 rounded shadow-md">
+                <ul className="absolute z-50 mt-1 max-h-60 w-full overflow-auto rounded border bg-white shadow-md">
                   {suggestions.map((place, idx) => (
-                    <li key={idx} className="p-2 hover:bg-sky-100 cursor-pointer" onClick={() => selectSuggestion(place)}>
+                    <li
+                      key={idx}
+                      className="cursor-pointer p-2 hover:bg-sky-100"
+                      onClick={() => selectSuggestion(place)}
+                    >
                       {place.place_name}
                     </li>
                   ))}
@@ -477,7 +578,8 @@ export default function ProviderSettings() {
               )}
             </div>
           )}
-          <div className="h-80 rounded overflow-hidden">
+
+          <div className="h-80 overflow-hidden rounded">
             <MapContainer center={[profile.lat, profile.lng]} zoom={13} className="h-full w-full">
               <TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
               {profile.lat != null && profile.lng != null && (
@@ -486,7 +588,13 @@ export default function ProviderSettings() {
                   <Marker
                     position={[profile.lat, profile.lng]}
                     draggable={editing}
-                    eventHandlers={{ dragend: (e) => handleMarkerDrag(e.target.getLatLng().lat, e.target.getLatLng().lng) }}
+                    eventHandlers={{
+                      dragend: (e) =>
+                        handleMarkerDrag(
+                          e.target.getLatLng().lat,
+                          e.target.getLatLng().lng
+                        ),
+                    }}
                   />
                 </>
               )}
@@ -496,34 +604,16 @@ export default function ProviderSettings() {
 
         {editing && (
           <div className="text-right">
-            <button onClick={handleSave} className="bg-sky-600 text-white px-6 py-2 rounded-lg" disabled={loading}>
+            <button
+              onClick={handleSave}
+              className="rounded-lg bg-sky-600 px-6 py-2 text-white"
+              disabled={loading}
+            >
               {loading ? "Saving..." : "Save Changes"}
             </button>
           </div>
         )}
       </div>
-    </div>
-  );
-}
-
-// ---------------- Helper Components ----------------
-function InputField({ label, value, onChange, disabled }) {
-  return (
-    <div>
-      <label className="text-sm capitalize">{label}</label>
-      <input value={value || ""} disabled={disabled} onChange={(e) => onChange(e.target.value)} className="w-full border p-2 rounded" />
-    </div>
-  );
-}
-
-function Section({ title, icon, children }) {
-  return (
-    <div className="bg-white p-5 rounded-xl shadow space-y-4">
-      <div className="flex gap-2 font-semibold text-sky-600">
-        {icon}
-        {title}
-      </div>
-      {children}
     </div>
   );
 }

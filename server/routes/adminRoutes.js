@@ -2,6 +2,7 @@ import express from "express";
 const router = express.Router();
 
 import User from "../models/User.js";
+import Provider from "../models/Provider.js"; // ✅ NEW
 import Booking from "../models/Booking.js";
 import Service from "../models/Service.js";
 import { protect } from "../middleware/authMiddleware.js";
@@ -41,13 +42,13 @@ router.get("/summary", protect("admin"), async (req, res) => {
       rejectedProviders,
     ] = await Promise.all([
       User.countDocuments(),
-      User.countDocuments({ role: "provider" }),
+      Provider.countDocuments(), // ✅ FIXED
       Booking.countDocuments(),
       Service.countDocuments(),
-      User.countDocuments({ role: "provider", verificationStatus: "pending" }),
+      Provider.countDocuments({ status: "pending" }), // ✅ FIXED
       Booking.countDocuments({ status: "pending" }),
-      User.countDocuments({ role: "provider", verificationStatus: "approved" }),
-      User.countDocuments({ role: "provider", verificationStatus: "rejected" }),
+      Provider.countDocuments({ status: "approved" }), // ✅ FIXED
+      Provider.countDocuments({ status: "rejected" }), // ✅ FIXED
     ]);
 
     res.json({
@@ -72,68 +73,109 @@ router.get("/summary", protect("admin"), async (req, res) => {
    USERS
 ============================ */
 router.get("/users", protect("admin"), async (req, res) => {
-  const { page, limit, skip } = parsePagination(req.query);
+  try {
+    const { page, limit, skip } = parsePagination(req.query);
 
-  const users = await User.find()
-    .select("-password")
-    .sort({ createdAt: -1 })
-    .skip(skip)
-    .limit(limit);
+    const users = await User.find()
+      .select("-password")
+      .sort({ createdAt: -1 })
+      .skip(skip)
+      .limit(limit);
 
-  const total = await User.countDocuments();
+    const total = await User.countDocuments();
 
-  res.json({
-    success: true,
-    users,
-    page,
-    limit,
-    totalPages: Math.ceil(total / limit),
-    total,
-  });
+    res.json({
+      success: true,
+      users,
+      page,
+      limit,
+      totalPages: Math.ceil(total / limit),
+      total,
+    });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
 });
 
-router.get("/providers", protect("admin"), async (req, res) => {
-  const providers = await User.find({ role: "provider" })
-    .select("-password")
-    .sort({ createdAt: -1 });
+/* ============================
+   PROVIDERS
+============================ */
 
-  res.json({ success: true, providers });
+// 🔹 Get all providers (list view)
+router.get("/providers", protect("admin"), async (req, res) => {
+  try {
+    const providers = await Provider.find()
+      .select("basicInfo status services category rating reviewCount createdAt")
+      .sort({ createdAt: -1 });
+
+    res.json({ success: true, providers });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+});
+
+// 🔹 Get single provider (DETAIL VIEW - modal)
+router.get("/providers/:id", protect("admin"), async (req, res) => {
+  try {
+    const provider = await Provider.findById(req.params.id)
+      .populate("user", "name email role")
+      .lean();
+
+    if (!provider) {
+      return res.status(404).json({
+        success: false,
+        message: "Provider not found",
+      });
+    }
+
+    res.json({ success: true, provider });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
 });
 
 /* ============================
    SERVICES
 ============================ */
 router.get("/services", protect("admin"), async (req, res) => {
-  const services = await Service.find()
-    .populate("provider", "name email")
-    .sort({ createdAt: -1 });
+  try {
+    const services = await Service.find()
+      .populate("provider", "name email")
+      .sort({ createdAt: -1 });
 
-  res.json({ success: true, services });
+    res.json({ success: true, services });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
 });
 
 /* ============================
    BOOKINGS
 ============================ */
 router.get("/bookings", protect("admin"), async (req, res) => {
-  const { page, limit, skip } = parsePagination(req.query);
+  try {
+    const { page, limit, skip } = parsePagination(req.query);
 
-  const bookings = await Booking.find()
-    .populate("customer", "name email phone")
-    .populate("provider", "name email phone")
-    .sort({ createdAt: -1 })
-    .skip(skip)
-    .limit(limit);
+    const bookings = await Booking.find()
+      .populate("customer", "name email phone")
+      .populate("provider", "name email phone")
+      .sort({ createdAt: -1 })
+      .skip(skip)
+      .limit(limit);
 
-  const total = await Booking.countDocuments();
+    const total = await Booking.countDocuments();
 
-  res.json({
-    success: true,
-    bookings,
-    page,
-    limit,
-    totalPages: Math.ceil(total / limit),
-    total,
-  });
+    res.json({
+      success: true,
+      bookings,
+      page,
+      limit,
+      totalPages: Math.ceil(total / limit),
+      total,
+    });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
 });
 
 /* ============================
@@ -186,30 +228,32 @@ router.put("/bookings/:id/status", protect("admin"), async (req, res) => {
    DELETE BOOKING
 ============================ */
 router.delete("/bookings/:id", protect("admin"), async (req, res) => {
-  const booking = await Booking.findById(req.params.id);
+  try {
+    const booking = await Booking.findById(req.params.id);
 
-  if (!booking) {
-    return res.status(404).json({
-      success: false,
-      message: "Booking not found",
+    if (!booking) {
+      return res.status(404).json({
+        success: false,
+        message: "Booking not found",
+      });
+    }
+
+    await booking.deleteOne();
+
+    res.json({
+      success: true,
+      message: "Booking deleted",
     });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
   }
-
-  await booking.deleteOne();
-
-  res.json({
-    success: true,
-    message: "Booking deleted",
-  });
 });
 
 /* ============================
    ANALYTICS
 ============================ */
-router.get(
-  "/analytics/bookings-per-day",
-  protect("admin"),
-  async (req, res) => {
+router.get("/analytics/bookings-per-day", protect("admin"), async (req, res) => {
+  try {
     const data = await Booking.aggregate([
       {
         $group: {
@@ -226,7 +270,9 @@ router.get(
       success: true,
       data: data.map((d) => ({ date: d._id, count: d.count })),
     });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
   }
-);
+});
 
 export default router;

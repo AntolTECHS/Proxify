@@ -1,6 +1,7 @@
 const User = require("../models/User");
 const Booking = require("../models/Booking");
 const Service = require("../models/Service");
+const Provider = require("../models/Provider");
 
 /* ======================================================
    HELPER: Ensure admin access
@@ -29,10 +30,10 @@ exports.getSummary = async (req, res) => {
       pendingBookings,
     ] = await Promise.all([
       User.countDocuments(),
-      User.countDocuments({ role: "provider" }),
+      Provider.countDocuments(),
       Booking.countDocuments(),
       Service.countDocuments(),
-      User.countDocuments({ role: "provider", verificationStatus: "pending" }),
+      Provider.countDocuments({ status: "pending" }),
       Booking.countDocuments({ status: "pending" }),
     ]);
 
@@ -75,10 +76,35 @@ exports.getProviders = async (req, res) => {
   if (!checkAdmin(req, res)) return;
 
   try {
-    const providers = await User.find({ role: "provider" }).select("-password");
+    const providers = await Provider.find()
+      .populate("user", "name email role")
+      .sort({ createdAt: -1 });
+
     res.json({ success: true, providers });
   } catch (error) {
     console.error("Providers error:", error);
+    res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+exports.getProviderById = async (req, res) => {
+  if (!checkAdmin(req, res)) return;
+
+  try {
+    const provider = await Provider.findById(req.params.id)
+      .populate("user", "name email role")
+      .lean();
+
+    if (!provider) {
+      return res.status(404).json({
+        success: false,
+        message: "Provider not found",
+      });
+    }
+
+    res.json({ success: true, provider });
+  } catch (error) {
+    console.error("Provider details error:", error);
     res.status(500).json({ success: false, message: error.message });
   }
 };
@@ -87,10 +113,9 @@ exports.getPendingProviders = async (req, res) => {
   if (!checkAdmin(req, res)) return;
 
   try {
-    const providers = await User.find({
-      role: "provider",
-      verificationStatus: "pending",
-    }).select("-password");
+    const providers = await Provider.find({ status: "pending" })
+      .populate("user", "name email role")
+      .sort({ createdAt: -1 });
 
     res.json({ success: true, providers });
   } catch (error) {
@@ -106,17 +131,16 @@ exports.approveProvider = async (req, res) => {
   if (!checkAdmin(req, res)) return;
 
   try {
-    const provider = await User.findById(req.params.id);
+    const provider = await Provider.findById(req.params.id);
 
-    if (!provider || provider.role !== "provider") {
-      return res.status(404).json({ success: false, message: "Provider not found" });
+    if (!provider) {
+      return res.status(404).json({
+        success: false,
+        message: "Provider not found",
+      });
     }
 
-    provider.isVerified = true;
-    provider.verificationStatus = "approved";
-    provider.verificationNotes = "";
-    provider.verifiedAt = new Date();
-
+    provider.status = "approved";
     await provider.save();
 
     res.json({
@@ -137,7 +161,7 @@ exports.rejectProvider = async (req, res) => {
   if (!checkAdmin(req, res)) return;
 
   try {
-    const { notes } = req.body; // ✅ FIXED (was reason)
+    const notes = req.body?.notes || req.body?.reason;
 
     if (!notes || !notes.trim()) {
       return res.status(400).json({
@@ -146,17 +170,17 @@ exports.rejectProvider = async (req, res) => {
       });
     }
 
-    const provider = await User.findById(req.params.id);
+    const provider = await Provider.findById(req.params.id);
 
-    if (!provider || provider.role !== "provider") {
-      return res.status(404).json({ success: false, message: "Provider not found" });
+    if (!provider) {
+      return res.status(404).json({
+        success: false,
+        message: "Provider not found",
+      });
     }
 
-    provider.isVerified = false;
-    provider.verificationStatus = "rejected";
-    provider.verificationNotes = notes.trim();
-    provider.verifiedAt = null;
-
+    provider.status = "rejected";
+    provider.rejectionNotes = notes.trim();
     await provider.save();
 
     res.json({

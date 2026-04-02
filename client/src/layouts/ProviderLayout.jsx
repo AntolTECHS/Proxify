@@ -1,10 +1,23 @@
 // src/layouts/ProviderLayout.jsx
 import { useState } from "react";
-import { Navigate, NavLink, useLocation } from "react-router-dom";
-import { FaTachometerAlt, FaUsers, FaClipboardList, FaCogs, FaSignOutAlt, FaBars, FaTimes } from "react-icons/fa";
+import {
+  Navigate,
+  NavLink,
+  useLocation,
+  Outlet, // ✅ added
+} from "react-router-dom";
+import {
+  FaTachometerAlt,
+  FaUsers,
+  FaClipboardList,
+  FaCogs,
+  FaSignOutAlt,
+  FaBars,
+  FaTimes,
+} from "react-icons/fa";
 import { useAuth } from "../context/AuthContext.jsx";
 
-export default function ProviderLayout({ children }) {
+export default function ProviderLayout() {
   const { user, isLoading, logout } = useAuth();
   const location = useLocation();
   const [mobileOpen, setMobileOpen] = useState(false);
@@ -52,8 +65,8 @@ export default function ProviderLayout({ children }) {
             className={({ isActive }) =>
               `flex items-center gap-3 px-4 py-2 rounded-md transition ${
                 isActive
-                  ? "bg-sky-400 text-white" // ✅ Active link light blue
-                  : "text-gray-700 hover:bg-sky-100" // ✅ Hover light blue background
+                  ? "bg-sky-400 text-white"
+                  : "text-gray-700 hover:bg-sky-100"
               }`
             }
           >
@@ -119,8 +132,10 @@ export default function ProviderLayout({ children }) {
           </button>
         </header>
 
-        {/* Page Content */}
-        <main className="flex-1 p-4 md:p-8 w-full">{children}</main>
+        {/* ✅ THIS IS THE FIX */}
+        <main className="flex-1 p-4 md:p-8 w-full">
+          <Outlet />
+        </main>
       </div>
     </div>
   );
