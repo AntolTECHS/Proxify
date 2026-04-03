@@ -30,10 +30,10 @@ const serviceSchema = new mongoose.Schema(
 
 const documentSchema = new mongoose.Schema(
 {
-  name:String,
-  path:String,
-  size:Number,
-  type:String
+  name:{ type:String, trim:true },
+  path:{ type:String, trim:true },
+  size:{ type:Number, min:0 },
+  type:{ type:String, trim:true }
 },
 { _id:false }
 );
@@ -75,9 +75,9 @@ const geoSchema = new mongoose.Schema(
 
   coordinates:{
     type:[Number], // [lng, lat]
+    default:[0,0],
     index:"2dsphere"
   }
-
 },
 { _id:false }
 );
@@ -88,7 +88,7 @@ const geoSchema = new mongoose.Schema(
 const providerSchema = new mongoose.Schema(
 {
 
-  /* Linked user account */
+  /* ================= USER LINK ================= */
 
   user:{
     type:mongoose.Schema.Types.ObjectId,
@@ -99,17 +99,23 @@ const providerSchema = new mongoose.Schema(
   },
 
 
-  /* Admin approval */
+  /* ================= ADMIN APPROVAL ================= */
 
   status:{
     type:String,
     enum:["pending","approved","rejected"],
-    default:"approved",
+    default:"pending",
     index:true
   },
 
+  rejectionReason:{
+    type:String,
+    trim:true,
+    default:""
+  },
 
-  /* Online availability */
+
+  /* ================= ONLINE STATUS ================= */
 
   availabilityStatus:{
     type:String,
@@ -118,10 +124,9 @@ const providerSchema = new mongoose.Schema(
   },
 
 
-  /* Basic profile info */
+  /* ================= BASIC INFO ================= */
 
   basicInfo:{
-
     providerName:{
       type:String,
       required:true,
@@ -157,7 +162,7 @@ const providerSchema = new mongoose.Schema(
   },
 
 
-  /* Provider bio */
+  /* ================= PROFILE ================= */
 
   bio:{
     type:String,
@@ -165,17 +170,11 @@ const providerSchema = new mongoose.Schema(
     default:""
   },
 
-
-  /* Service category */
-
   category:{
     type:String,
     trim:true,
     index:true
   },
-
-
-  /* Experience */
 
   experience:{
     type:Number,
@@ -184,7 +183,7 @@ const providerSchema = new mongoose.Schema(
   },
 
 
-  /* Ratings */
+  /* ================= RATINGS ================= */
 
   rating:{
     type:Number,
@@ -199,7 +198,7 @@ const providerSchema = new mongoose.Schema(
   },
 
 
-  /* GEO LOCATION */
+  /* ================= GEO ================= */
 
   location:{
     type:geoSchema,
@@ -210,7 +209,7 @@ const providerSchema = new mongoose.Schema(
   },
 
 
-  /* Services offered */
+  /* ================= SERVICES ================= */
 
   services:{
     type:[serviceSchema],
@@ -225,7 +224,7 @@ const providerSchema = new mongoose.Schema(
   },
 
 
-  /* Working availability */
+  /* ================= AVAILABILITY ================= */
 
   availability:{
     type:availabilitySchema,
@@ -233,7 +232,7 @@ const providerSchema = new mongoose.Schema(
   },
 
 
-  /* Uploaded verification docs */
+  /* ================= DOCUMENTS ================= */
 
   documents:{
     type:[documentSchema],
@@ -247,18 +246,40 @@ const providerSchema = new mongoose.Schema(
 
 /* ================= INDEXES ================= */
 
-/* Search by name & category */
-
+/* 🔍 Text search */
 providerSchema.index({
   "basicInfo.providerName":"text",
   category:"text"
 });
 
-/* Fast filtering */
-
+/* ⚡ Fast filtering */
 providerSchema.index({
-  category:1,
-  status:1
+  status:1,
+  category:1
+});
+
+/* 📍 Geo queries */
+providerSchema.index({
+  location:"2dsphere"
+});
+
+
+/* ================= VIRTUALS ================= */
+
+/* Optional: show if provider is verified */
+providerSchema.virtual("isVerified").get(function(){
+  return this.status === "approved";
+});
+
+
+/* ================= TRANSFORM ================= */
+
+providerSchema.set("toJSON", {
+  virtuals:true,
+  transform:(_, ret) => {
+    delete ret.__v;
+    return ret;
+  }
 });
 
 

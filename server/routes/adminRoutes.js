@@ -1,11 +1,21 @@
 import express from "express";
+import { v2 as cloudinary } from "cloudinary";
 const router = express.Router();
 
 import User from "../models/User.js";
-import Provider from "../models/Provider.js"; // ✅ NEW
+import Provider from "../models/Provider.js";
 import Booking from "../models/Booking.js";
 import Service from "../models/Service.js";
 import { protect } from "../middleware/authMiddleware.js";
+
+/* ============================
+   Cloudinary config
+============================ */
+cloudinary.config({
+  cloud_name: process.env.CLOUDINARY_NAME,
+  api_key: process.env.CLOUDINARY_KEY,
+  api_secret: process.env.CLOUDINARY_SECRET,
+});
 
 /* ============================
    Helpers
@@ -26,6 +36,89 @@ const bookingTransitions = {
   cancelled: [],
 };
 
+const extractCloudinaryInfo = (filePath) => {
+  if (!filePath || typeof filePath !== "string") {
+    return { publicId: "", resourceType: "image", format: "" };
+  }
+
+  if (!/^https?:\/\//i.test(filePath)) {
+    return {
+      publicId: filePath.replace(/^\//, ""),
+      resourceType: "image",
+      format: "",
+    };
+  }
+
+  try {
+    const parsed = new URL(filePath);
+    const parts = parsed.pathname.split("/").filter(Boolean);
+
+    const uploadIndex = parts.findIndex(
+      (part, idx) =>
+        (part === "upload" || part === "private" || part === "authenticated") &&
+        idx > 0
+    );
+
+    let resourceType = "image";
+    if (parts.includes("raw")) resourceType = "raw";
+    else if (parts.includes("video")) resourceType = "video";
+    else if (parts.includes("image")) resourceType = "image";
+
+    let publicPath = "";
+    if (uploadIndex >= 0) {
+      publicPath = parts.slice(uploadIndex + 1).join("/");
+    } else {
+      publicPath = parts.slice(-1)[0] || "";
+    }
+
+    const versionMatch = publicPath.match(/^v\d+\/(.+)$/i);
+    if (versionMatch) {
+      publicPath = versionMatch[1];
+    }
+
+    const formatMatch = publicPath.match(/\.([a-z0-9]+)$/i);
+    const format = formatMatch ? formatMatch[1].toLowerCase() : "";
+
+    const publicId = publicPath.replace(/\.[^.]+$/, "");
+
+    return {
+      publicId: decodeURIComponent(publicId),
+      resourceType,
+      format,
+    };
+  } catch {
+    return { publicId: "", resourceType: "image", format: "" };
+  }
+};
+
+const buildSignedCloudinaryUrl = (doc) => {
+  if (!doc) return "";
+
+  const filePath = doc.path || doc.url || doc.link || "";
+  const storedPublicId = doc.publicId || doc.public_id || "";
+
+  let publicId = storedPublicId;
+  let resourceType = doc.resourceType || doc.resource_type || "image";
+  let format = doc.format || "";
+
+  if (!publicId && filePath) {
+    const extracted = extractCloudinaryInfo(filePath);
+    publicId = extracted.publicId;
+    resourceType = extracted.resourceType || resourceType;
+    format = format || extracted.format || "";
+  }
+
+  if (!publicId) return "";
+
+  return cloudinary.url(publicId, {
+    secure: true,
+    sign_url: true,
+    resource_type: resourceType,
+    type: "upload",
+    format: format || undefined,
+  });
+};
+
 /* ============================
    DASHBOARD SUMMARY
 ============================ */
@@ -42,13 +135,13 @@ router.get("/summary", protect("admin"), async (req, res) => {
       rejectedProviders,
     ] = await Promise.all([
       User.countDocuments(),
-      Provider.countDocuments(), // ✅ FIXED
+      Provider.countDocuments(),
       Booking.countDocuments(),
       Service.countDocuments(),
-      Provider.countDocuments({ status: "pending" }), // ✅ FIXED
+      Provider.countDocuments({ status: "pending" }),
       Booking.countDocuments({ status: "pending" }),
-      Provider.countDocuments({ status: "approved" }), // ✅ FIXED
-      Provider.countDocuments({ status: "rejected" }), // ✅ FIXED
+      Provider.countDocuments({ status: "approved" }),
+      Provider.countDocuments({ status: "rejected" }),
     ]);
 
     res.json({
@@ -101,20 +194,37 @@ router.get("/users", protect("admin"), async (req, res) => {
    PROVIDERS
 ============================ */
 
-// 🔹 Get all providers (list view)
+// Get all providers (list view)
 router.get("/providers", protect("admin"), async (req, res) => {
   try {
-    const providers = await Provider.find()
-      .select("basicInfo status services category rating reviewCount createdAt")
-      .sort({ createdAt: -1 });
+    const { page, limit, skip } = parsePagination(req.query);
 
-    res.json({ success: true, providers });
+    const providers = await Provider.find()
+      .select(
+        "basicInfo status services documents category rating reviewCount createdAt updatedAt"
+      )
+      .populate("user", "name email role")
+      .sort({ createdAt: -1 })
+      .skip(skip)
+      .limit(limit)
+      .lean();
+
+    const total = await Provider.countDocuments();
+
+    res.json({
+      success: true,
+      providers,
+      page,
+      limit,
+      totalPages: Math.ceil(total / limit),
+      total,
+    });
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });
   }
 });
 
-// 🔹 Get single provider (DETAIL VIEW - modal)
+// Get single provider (detail view / modal)
 router.get("/providers/:id", protect("admin"), async (req, res) => {
   try {
     const provider = await Provider.findById(req.params.id)
@@ -129,6 +239,122 @@ router.get("/providers/:id", protect("admin"), async (req, res) => {
     }
 
     res.json({ success: true, provider });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+});
+
+// Secure document URL for admin only
+router.get("/providers/:id/documents/:documentId/url", protect("admin"), async (req, res) => {
+  try {
+    const { id, documentId } = req.params;
+
+    const provider = await Provider.findById(id).lean();
+
+    if (!provider) {
+      return res.status(404).json({
+        success: false,
+        message: "Provider not found",
+      });
+    }
+
+    const documents = Array.isArray(provider.documents) ? provider.documents : [];
+    const doc =
+      documents.find(
+        (d) => String(d._id) === String(documentId) || String(d.id) === String(documentId)
+      ) ||
+      (Number.isInteger(Number(documentId)) ? documents[Number(documentId)] : null);
+
+    if (!doc) {
+      return res.status(404).json({
+        success: false,
+        message: "Document not found",
+      });
+    }
+
+    const signedUrl = buildSignedCloudinaryUrl(doc);
+
+    if (!signedUrl) {
+      return res.status(400).json({
+        success: false,
+        message: "Could not generate secure document URL",
+      });
+    }
+
+    res.json({
+      success: true,
+      url: signedUrl,
+      document: {
+        id: doc._id || doc.id || null,
+        name: doc.name || "Unnamed document",
+        type: doc.type || "",
+      },
+    });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+});
+
+// Approve provider
+router.put("/providers/:id/approve", protect("admin"), async (req, res) => {
+  try {
+    const provider = await Provider.findById(req.params.id);
+
+    if (!provider) {
+      return res.status(404).json({
+        success: false,
+        message: "Provider not found",
+      });
+    }
+
+    provider.status = "approved";
+    await provider.save();
+
+    const updatedProvider = await Provider.findById(req.params.id)
+      .populate("user", "name email role")
+      .lean();
+
+    res.json({
+      success: true,
+      message: "Provider approved successfully",
+      provider: updatedProvider,
+    });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+});
+
+// Reject provider
+router.put("/providers/:id/reject", protect("admin"), async (req, res) => {
+  try {
+    const { notes } = req.body;
+
+    const provider = await Provider.findById(req.params.id);
+
+    if (!provider) {
+      return res.status(404).json({
+        success: false,
+        message: "Provider not found",
+      });
+    }
+
+    provider.status = "rejected";
+
+    if (notes && typeof notes === "string") {
+      provider.rejectionNotes = notes.trim();
+    }
+
+    await provider.save();
+
+    const updatedProvider = await Provider.findById(req.params.id)
+      .populate("user", "name email role")
+      .lean();
+
+    res.json({
+      success: true,
+      message: "Provider rejected successfully",
+      provider: updatedProvider,
+    });
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });
   }

@@ -15,6 +15,46 @@ const checkAdmin = (req, res) => {
 };
 
 /* ======================================================
+   HELPER: Normalize provider for safe response
+====================================================== */
+const normalizeProvider = (provider) => {
+  if (!provider) return provider;
+
+  const plain = typeof provider.toObject === "function" ? provider.toObject() : provider;
+
+  return {
+    ...plain,
+    services: Array.isArray(plain.services) ? plain.services : [],
+    documents: Array.isArray(plain.documents) ? plain.documents : [],
+    approvalBanner:
+      plain.status === "approved"
+        ? "Approved"
+        : plain.status === "rejected"
+        ? "Rejected"
+        : "Pending admin approval",
+    isApproved: plain.status === "approved",
+    isPending: plain.status === "pending",
+    isRejected: plain.status === "rejected",
+  };
+};
+
+/* ======================================================
+   HELPER: Normalize booking for safe response
+====================================================== */
+const normalizeBooking = (booking) => {
+  if (!booking) return booking;
+
+  const plain = typeof booking.toObject === "function" ? booking.toObject() : booking;
+
+  return {
+    ...plain,
+    service: plain.service || null,
+    provider: plain.provider || null,
+    customer: plain.customer || null,
+  };
+};
+
+/* ======================================================
    DASHBOARD SUMMARY
 ====================================================== */
 exports.getSummary = async (req, res) => {
@@ -27,6 +67,8 @@ exports.getSummary = async (req, res) => {
       totalBookings,
       totalServices,
       pendingProviders,
+      approvedProviders,
+      rejectedProviders,
       pendingBookings,
     ] = await Promise.all([
       User.countDocuments(),
@@ -34,6 +76,8 @@ exports.getSummary = async (req, res) => {
       Booking.countDocuments(),
       Service.countDocuments(),
       Provider.countDocuments({ status: "pending" }),
+      Provider.countDocuments({ status: "approved" }),
+      Provider.countDocuments({ status: "rejected" }),
       Booking.countDocuments({ status: "pending" }),
     ]);
 
@@ -45,6 +89,8 @@ exports.getSummary = async (req, res) => {
         totalBookings,
         totalServices,
         pendingProviders,
+        approvedProviders,
+        rejectedProviders,
         pendingBookings,
       },
     });
@@ -61,7 +107,7 @@ exports.getAllUsers = async (req, res) => {
   if (!checkAdmin(req, res)) return;
 
   try {
-    const users = await User.find().select("-password");
+    const users = await User.find().select("-password").lean();
     res.json({ success: true, users });
   } catch (error) {
     console.error("Users error:", error);
@@ -78,9 +124,13 @@ exports.getProviders = async (req, res) => {
   try {
     const providers = await Provider.find()
       .populate("user", "name email role")
-      .sort({ createdAt: -1 });
+      .sort({ createdAt: -1 })
+      .lean();
 
-    res.json({ success: true, providers });
+    res.json({
+      success: true,
+      providers: providers.map(normalizeProvider),
+    });
   } catch (error) {
     console.error("Providers error:", error);
     res.status(500).json({ success: false, message: error.message });
@@ -102,7 +152,7 @@ exports.getProviderById = async (req, res) => {
       });
     }
 
-    res.json({ success: true, provider });
+    res.json({ success: true, provider: normalizeProvider(provider) });
   } catch (error) {
     console.error("Provider details error:", error);
     res.status(500).json({ success: false, message: error.message });
@@ -115,9 +165,13 @@ exports.getPendingProviders = async (req, res) => {
   try {
     const providers = await Provider.find({ status: "pending" })
       .populate("user", "name email role")
-      .sort({ createdAt: -1 });
+      .sort({ createdAt: -1 })
+      .lean();
 
-    res.json({ success: true, providers });
+    res.json({
+      success: true,
+      providers: providers.map(normalizeProvider),
+    });
   } catch (error) {
     console.error("Pending providers error:", error);
     res.status(500).json({ success: false, message: error.message });
@@ -141,12 +195,13 @@ exports.approveProvider = async (req, res) => {
     }
 
     provider.status = "approved";
+    provider.rejectionReason = "";
     await provider.save();
 
     res.json({
       success: true,
       message: "Provider approved",
-      provider,
+      provider: normalizeProvider(provider),
     });
   } catch (error) {
     console.error("Approve provider error:", error);
@@ -161,9 +216,9 @@ exports.rejectProvider = async (req, res) => {
   if (!checkAdmin(req, res)) return;
 
   try {
-    const notes = req.body?.notes || req.body?.reason;
+    const reason = req.body?.notes || req.body?.reason;
 
-    if (!notes || !notes.trim()) {
+    if (!reason || !reason.trim()) {
       return res.status(400).json({
         success: false,
         message: "Rejection reason is required",
@@ -180,13 +235,13 @@ exports.rejectProvider = async (req, res) => {
     }
 
     provider.status = "rejected";
-    provider.rejectionNotes = notes.trim();
+    provider.rejectionReason = reason.trim();
     await provider.save();
 
     res.json({
       success: true,
       message: "Provider rejected",
-      provider,
+      provider: normalizeProvider(provider),
     });
   } catch (error) {
     console.error("Reject provider error:", error);
@@ -202,12 +257,13 @@ exports.getAllBookings = async (req, res) => {
 
   try {
     const bookings = await Booking.find()
-      .populate("service", "name cost")
-      .populate("provider", "name email")
+      .populate("service", "name price")
+      .populate("provider", "basicInfo.providerName basicInfo.email status")
       .populate("customer", "name email")
-      .sort({ createdAt: -1 });
+      .sort({ createdAt: -1 })
+      .lean();
 
-    res.json({ success: true, bookings });
+    res.json({ success: true, bookings: bookings.map(normalizeBooking) });
   } catch (error) {
     console.error("Bookings error:", error);
     res.status(500).json({ success: false, message: error.message });
@@ -244,7 +300,7 @@ exports.updateBookingStatus = async (req, res) => {
     res.json({
       success: true,
       message: "Booking updated",
-      booking,
+      booking: normalizeBooking(booking),
     });
   } catch (error) {
     console.error("Update booking error:", error);
@@ -256,7 +312,14 @@ exports.deleteBooking = async (req, res) => {
   if (!checkAdmin(req, res)) return;
 
   try {
-    await Booking.findByIdAndDelete(req.params.id);
+    const deleted = await Booking.findByIdAndDelete(req.params.id);
+
+    if (!deleted) {
+      return res.status(404).json({
+        success: false,
+        message: "Booking not found",
+      });
+    }
 
     res.json({
       success: true,

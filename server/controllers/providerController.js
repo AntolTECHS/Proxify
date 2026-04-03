@@ -4,6 +4,60 @@ import User from "../models/User.js";
 import { uploadBuffer } from "../utils/uploadToCloudinary.js";
 import { geocodeAddress } from "../utils/geocode.js";
 
+const parseMaybeJSON = (value, fallback) => {
+  if (value === undefined || value === null || value === "") return fallback;
+
+  if (typeof value === "string") {
+    return JSON.parse(value);
+  }
+
+  return value;
+};
+
+const formatProviderStatus = (status) => {
+  if (status === "approved") return "Approved";
+  if (status === "rejected") return "Rejected";
+  return "Pending admin approval";
+};
+
+const normalizeProviderResponse = (provider) => {
+  if (!provider) return provider;
+
+  const plain =
+    typeof provider.toObject === "function" ? provider.toObject() : provider;
+
+  return {
+    ...plain,
+    services: Array.isArray(plain.services) ? plain.services : [],
+    documents: Array.isArray(plain.documents) ? plain.documents : [],
+    isApproved: plain.status === "approved",
+    isPending: plain.status === "pending",
+    isRejected: plain.status === "rejected",
+    approvalBanner: formatProviderStatus(plain.status),
+  };
+};
+
+const buildServices = (services = []) => {
+  return services.map((s, index) => {
+    const name = String(s?.name || "").trim();
+    const price = Number(s?.price);
+
+    if (!name) {
+      throw new Error(`Service ${index + 1} name is required`);
+    }
+
+    if (!Number.isFinite(price) || price < 0) {
+      throw new Error(`Service ${index + 1} price must be a valid number`);
+    }
+
+    return {
+      name,
+      price,
+      description: String(s?.description || "").trim(),
+    };
+  });
+};
+
 /**
  * @desc    Upgrade a user to provider
  * @route   POST /api/providers/onboard
@@ -19,17 +73,12 @@ export const upgradeToProvider = asyncHandler(async (req, res) => {
 
   let basicInfo = {};
   let services = [];
+  let availability = {};
 
   try {
-    basicInfo =
-      typeof req.body.basicInfo === "string"
-        ? JSON.parse(req.body.basicInfo)
-        : req.body.basicInfo || {};
-
-    services =
-      typeof req.body.services === "string"
-        ? JSON.parse(req.body.services)
-        : req.body.services || [];
+    basicInfo = parseMaybeJSON(req.body.basicInfo, {});
+    services = parseMaybeJSON(req.body.services, []);
+    availability = parseMaybeJSON(req.body.availability, {});
   } catch {
     return res.status(400).json({ message: "Invalid JSON format" });
   }
@@ -46,11 +95,7 @@ export const upgradeToProvider = asyncHandler(async (req, res) => {
       .json({ message: "At least one service is required" });
   }
 
-  services = services.map((s) => ({
-    name: s.name,
-    price: Number(s.price) || 0,
-    description: s.description || "",
-  }));
+  const normalizedServices = buildServices(services);
 
   const documents = [];
 
@@ -70,6 +115,7 @@ export const upgradeToProvider = asyncHandler(async (req, res) => {
     req.body.lat !== undefined && req.body.lat !== ""
       ? Number(req.body.lat)
       : null;
+
   const manualLng =
     req.body.lng !== undefined && req.body.lng !== ""
       ? Number(req.body.lng)
@@ -77,10 +123,7 @@ export const upgradeToProvider = asyncHandler(async (req, res) => {
 
   let coordinates = null;
 
-  if (
-    Number.isFinite(manualLat) &&
-    Number.isFinite(manualLng)
-  ) {
+  if (Number.isFinite(manualLat) && Number.isFinite(manualLng)) {
     coordinates = [manualLng, manualLat];
   } else if (basicInfo.location) {
     const geo = await geocodeAddress(basicInfo.location);
@@ -94,13 +137,16 @@ export const upgradeToProvider = asyncHandler(async (req, res) => {
       email: basicInfo.email,
       phone: basicInfo.phone || "",
       businessName: basicInfo.businessName || "",
-      bio: basicInfo.bio || "",
       location: basicInfo.location || "",
       photoURL: "",
     },
-    services,
+    bio: basicInfo.bio || "",
+    category: basicInfo.category || "",
+    experience: Number(basicInfo.experience) || 0,
+    services: normalizedServices,
     documents,
-    status: "approved",
+    availability: availability || {},
+    status: "pending",
     availabilityStatus: "Offline",
     rating: 0,
     reviewCount: 0,
@@ -115,7 +161,7 @@ export const upgradeToProvider = asyncHandler(async (req, res) => {
     provider: provider._id,
   });
 
-  res.status(201).json(provider);
+  res.status(201).json(normalizeProviderResponse(provider));
 });
 
 /**
@@ -133,7 +179,7 @@ export const getProviderProfile = asyncHandler(async (req, res) => {
     return res.status(404).json({ message: "Provider not found" });
   }
 
-  res.json(provider);
+  res.json(normalizeProviderResponse(provider));
 });
 
 /**
@@ -150,58 +196,98 @@ export const updateProvider = asyncHandler(async (req, res) => {
 
   let basicInfo = {};
   let services = [];
+  let availability = {};
 
   try {
-    basicInfo =
-      typeof req.body.basicInfo === "string"
-        ? JSON.parse(req.body.basicInfo)
-        : req.body.basicInfo || {};
-
-    services =
-      typeof req.body.services === "string"
-        ? JSON.parse(req.body.services)
-        : req.body.services || [];
+    basicInfo = parseMaybeJSON(req.body.basicInfo, {});
+    services = parseMaybeJSON(req.body.services, []);
+    availability = parseMaybeJSON(req.body.availability, {});
   } catch {
     return res.status(400).json({ message: "Invalid JSON format" });
   }
+
+  // Block any attempt to change approval fields from this route
+  delete req.body.status;
+  delete req.body.rejectionReason;
 
   provider.basicInfo = {
     ...provider.basicInfo,
     ...basicInfo,
   };
 
-  if (Array.isArray(services) && services.length > 0) {
-    provider.services = services.map((s) => ({
-      name: s.name,
-      price: Number(s.price) || 0,
-      description: s.description || "",
-    }));
+  if (typeof req.body.bio === "string") {
+    provider.bio = req.body.bio;
+  } else if (typeof basicInfo.bio === "string") {
+    provider.bio = basicInfo.bio;
   }
 
-  // Save coordinates from manual lat/lng if provided, otherwise geocode the location text
+  if (req.body.category !== undefined) {
+    provider.category = String(req.body.category).trim();
+  } else if (typeof basicInfo.category === "string") {
+    provider.category = String(basicInfo.category).trim();
+  }
+
+  if (req.body.experience !== undefined) {
+    const exp = Number(req.body.experience);
+    if (Number.isFinite(exp) && exp >= 0) {
+      provider.experience = exp;
+    }
+  } else if (basicInfo.experience !== undefined) {
+    const exp = Number(basicInfo.experience);
+    if (Number.isFinite(exp) && exp >= 0) {
+      provider.experience = exp;
+    }
+  }
+
+  if (Array.isArray(services) && services.length > 0) {
+    provider.services = buildServices(services);
+  }
+
+  if (
+    availability &&
+    typeof availability === "object" &&
+    !Array.isArray(availability)
+  ) {
+    const currentAvailability =
+      typeof provider.availability?.toObject === "function"
+        ? provider.availability.toObject()
+        : provider.availability || {};
+
+    provider.availability = {
+      ...currentAvailability,
+      ...availability,
+    };
+  }
+
   const manualLat =
     req.body.lat !== undefined && req.body.lat !== ""
       ? Number(req.body.lat)
       : null;
+
   const manualLng =
     req.body.lng !== undefined && req.body.lng !== ""
       ? Number(req.body.lng)
       : null;
 
   if (Number.isFinite(manualLat) && Number.isFinite(manualLng)) {
-    provider.location = provider.location || { type: "Point", coordinates: [0, 0] };
+    provider.location = provider.location || {
+      type: "Point",
+      coordinates: [0, 0],
+    };
     provider.location.type = "Point";
     provider.location.coordinates = [manualLng, manualLat];
   } else if (provider.basicInfo.location) {
     const geo = await geocodeAddress(provider.basicInfo.location);
     if (geo) {
-      provider.location = provider.location || { type: "Point", coordinates: [0, 0] };
+      provider.location = provider.location || {
+        type: "Point",
+        coordinates: [0, 0],
+      };
       provider.location.type = "Point";
       provider.location.coordinates = [geo.lng, geo.lat];
     }
   }
 
-  /* Upload profile photo */
   if (req.files?.photo?.length > 0) {
     const result = await uploadBuffer(
       req.files.photo[0].buffer,
@@ -210,7 +296,6 @@ export const updateProvider = asyncHandler(async (req, res) => {
     provider.basicInfo.photoURL = result.secure_url;
   }
 
-  /* Upload documents */
   if (req.files?.files?.length > 0) {
     for (const file of req.files.files) {
       const result = await uploadBuffer(file.buffer, "proxify/documents");
@@ -224,7 +309,7 @@ export const updateProvider = asyncHandler(async (req, res) => {
   }
 
   await provider.save();
-  res.json(provider);
+  res.json(normalizeProviderResponse(provider));
 });
 
 /**
@@ -235,11 +320,17 @@ export const updateProvider = asyncHandler(async (req, res) => {
 export const getAllProviders = asyncHandler(async (req, res) => {
   const providers = await Provider.find()
     .populate("user", "-password")
+    .sort({ createdAt: -1 })
     .lean();
 
   const result = providers.map((p) => ({
     ...p,
-    approvedBadge: p.status === "approved" ? "Approved" : "Not Approved",
+    services: Array.isArray(p.services) ? p.services : [],
+    documents: Array.isArray(p.documents) ? p.documents : [],
+    isApproved: p.status === "approved",
+    isPending: p.status === "pending",
+    isRejected: p.status === "rejected",
+    approvalBanner: formatProviderStatus(p.status),
   }));
 
   res.json(result);

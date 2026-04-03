@@ -47,9 +47,9 @@ function parseJsonInput(input, fallback = {}) {
 function normalizeServices(services) {
   if (!Array.isArray(services)) return [];
   return services.map((s) => ({
-    name: s?.name || "",
+    name: String(s?.name || "").trim(),
     price: Number(s?.price) || 0,
-    description: s?.description || "",
+    description: String(s?.description || "").trim(),
   }));
 }
 
@@ -62,6 +62,27 @@ function buildCoordinatesFromLatLng(lat, lng) {
   }
 
   return null;
+}
+
+function normalizeProvider(provider) {
+  if (!provider) return provider;
+
+  const plain = typeof provider.toObject === "function" ? provider.toObject() : provider;
+
+  return {
+    ...plain,
+    services: Array.isArray(plain.services) ? plain.services : [],
+    documents: Array.isArray(plain.documents) ? plain.documents : [],
+    isApproved: plain.status === "approved",
+    isPending: plain.status === "pending",
+    isRejected: plain.status === "rejected",
+    approvalBanner:
+      plain.status === "approved"
+        ? "Approved"
+        : plain.status === "rejected"
+        ? "Rejected"
+        : "Pending admin approval",
+  };
 }
 
 /* -------------------------------------------------------------------------- */
@@ -83,6 +104,7 @@ router.post(
     try {
       const basicInfo = parseJsonInput(req.body.basicInfo, null);
       const servicesInput = parseJsonInput(req.body.services, []);
+      const availabilityInput = parseJsonInput(req.body.availability, {});
 
       if (!basicInfo) {
         return res.status(400).json({ message: "Invalid JSON format for basicInfo" });
@@ -121,7 +143,7 @@ router.post(
 
       // Coordinates:
       // 1) Use explicit lat/lng if sent
-      // 2) Otherwise geocode the location text using OpenCage
+      // 2) Otherwise geocode the location text
       // 3) Fallback to [0,0]
       let coordinates = buildCoordinatesFromLatLng(req.body.lat, req.body.lng);
 
@@ -144,17 +166,20 @@ router.post(
             email: basicInfo.email,
             phone: basicInfo.phone,
             businessName: basicInfo.businessName || "",
-            bio: basicInfo.bio || "",
             location: basicInfo.location || "",
             photoURL,
           },
+          bio: basicInfo.bio || "",
+          category: basicInfo.category || "",
+          experience: Number(basicInfo.experience) || 0,
           services,
           documents,
+          availability: availabilityInput || {},
           location: {
             type: "Point",
             coordinates,
           },
-          status: "approved",
+          status: "pending",
           rating: 0,
           reviewCount: 0,
           availabilityStatus: "Offline",
@@ -162,14 +187,22 @@ router.post(
       } else {
         existingProvider.basicInfo = {
           ...existingProvider.basicInfo,
-          providerName: basicInfo.providerName ?? existingProvider.basicInfo.providerName,
+          providerName:
+            basicInfo.providerName ?? existingProvider.basicInfo.providerName,
           email: basicInfo.email ?? existingProvider.basicInfo.email,
           phone: basicInfo.phone ?? existingProvider.basicInfo.phone,
-          businessName: basicInfo.businessName ?? existingProvider.basicInfo.businessName,
-          bio: basicInfo.bio ?? existingProvider.basicInfo.bio,
+          businessName:
+            basicInfo.businessName ?? existingProvider.basicInfo.businessName,
           location: basicInfo.location ?? existingProvider.basicInfo.location,
           photoURL: photoURL || existingProvider.basicInfo.photoURL,
         };
+
+        existingProvider.bio = basicInfo.bio ?? existingProvider.bio;
+        existingProvider.category = basicInfo.category ?? existingProvider.category;
+
+        if (basicInfo.experience !== undefined) {
+          existingProvider.experience = Number(basicInfo.experience) || 0;
+        }
 
         if (services.length > 0) {
           existingProvider.services = services;
@@ -179,14 +212,25 @@ router.post(
           existingProvider.documents.push(...documents);
         }
 
+        if (availabilityInput && typeof availabilityInput === "object") {
+          existingProvider.availability = {
+            ...(typeof existingProvider.availability?.toObject === "function"
+              ? existingProvider.availability.toObject()
+              : existingProvider.availability || {}),
+            ...availabilityInput,
+          };
+        }
+
         if (!existingProvider.location) {
           existingProvider.location = { type: "Point", coordinates: [0, 0] };
         }
 
         if (coordinates) {
+          existingProvider.location.type = "Point";
           existingProvider.location.coordinates = coordinates;
         }
 
+        // Keep status as-is. Do not auto-approve existing providers.
         await existingProvider.save();
         provider = existingProvider;
       }
@@ -207,7 +251,10 @@ router.post(
         { expiresIn: "7d" }
       );
 
-      res.status(201).json({ provider, token });
+      res.status(201).json({
+        provider: normalizeProvider(provider),
+        token,
+      });
     } catch (err) {
       console.error("ONBOARD ERROR:", err);
       res.status(500).json({ message: err.message });
@@ -216,15 +263,18 @@ router.post(
 );
 
 /* -------------------------------------------------------------------------- */
-/*                       GET ALL APPROVED PROVIDERS                           */
+/*                            GET ALL PROVIDERS                               */
 /* -------------------------------------------------------------------------- */
 router.get("/", async (req, res) => {
   try {
-    const providers = await Provider.find({ status: "approved" })
+    const providers = await Provider.find()
       .populate("user", "-password")
+      .sort({ createdAt: -1 })
       .lean();
 
-    res.json(providers);
+    const result = providers.map((p) => normalizeProvider(p));
+
+    res.json(result);
   } catch (err) {
     console.error("GET PROVIDERS ERROR:", err);
     res.status(500).json({ message: "Failed to fetch providers" });
@@ -238,7 +288,8 @@ router.get("/me", protect("provider"), async (req, res) => {
   try {
     const provider = await Provider.findOne({ user: req.user._id }).lean();
     if (!provider) return res.status(404).json({ message: "Provider not found" });
-    res.json(provider);
+
+    res.json(normalizeProvider(provider));
   } catch (err) {
     console.error("GET PROFILE ERROR:", err);
     res.status(500).json({ message: "Server error fetching provider" });
@@ -262,8 +313,13 @@ router.put(
         return res.status(404).json({ message: "Provider not found" });
       }
 
+      // Prevent approval state changes from provider-side updates
+      delete req.body.status;
+      delete req.body.rejectionReason;
+
       const basicInfo = parseJsonInput(req.body.basicInfo, null);
       const servicesInput = parseJsonInput(req.body.services, []);
+      const availabilityInput = parseJsonInput(req.body.availability, null);
 
       if (!basicInfo) {
         return res.status(400).json({ message: "Invalid JSON format" });
@@ -277,9 +333,24 @@ router.put(
         email: basicInfo.email ?? provider.basicInfo.email,
         phone: basicInfo.phone ?? provider.basicInfo.phone,
         businessName: basicInfo.businessName ?? provider.basicInfo.businessName,
-        bio: basicInfo.bio ?? provider.basicInfo.bio,
         location: basicInfo.location ?? provider.basicInfo.location,
+        photoURL: provider.basicInfo.photoURL || "",
       };
+
+      if (typeof basicInfo.bio === "string") {
+        provider.bio = basicInfo.bio;
+      }
+
+      if (basicInfo.category !== undefined) {
+        provider.category = String(basicInfo.category).trim();
+      }
+
+      if (basicInfo.experience !== undefined) {
+        const exp = Number(basicInfo.experience);
+        if (Number.isFinite(exp) && exp >= 0) {
+          provider.experience = exp;
+        }
+      }
 
       // Upload new profile photo
       if (req.files?.photo?.[0]) {
@@ -305,23 +376,35 @@ router.put(
         provider.services = services;
       }
 
+      // Update availability if provided
+      if (availabilityInput && typeof availabilityInput === "object") {
+        provider.availability = {
+          ...(typeof provider.availability?.toObject === "function"
+            ? provider.availability.toObject()
+            : provider.availability || {}),
+          ...availabilityInput,
+        };
+      }
+
       // Update coordinates from lat/lng if sent
       const coordinates = buildCoordinatesFromLatLng(req.body.lat, req.body.lng);
 
-      // If no lat/lng were sent, geocode the location text using OpenCage
+      // If no lat/lng were sent, geocode the location text
       if (coordinates) {
         provider.location = provider.location || { type: "Point", coordinates: [0, 0] };
+        provider.location.type = "Point";
         provider.location.coordinates = coordinates;
       } else if (provider.basicInfo.location) {
         const geo = await geocodeAddress(provider.basicInfo.location);
         if (geo) {
           provider.location = provider.location || { type: "Point", coordinates: [0, 0] };
+          provider.location.type = "Point";
           provider.location.coordinates = [geo.lng, geo.lat];
         }
       }
 
       await provider.save();
-      res.json(provider);
+      res.json(normalizeProvider(provider));
     } catch (err) {
       console.error("UPDATE ERROR:", err);
       res.status(500).json({ message: err.message });
@@ -334,9 +417,13 @@ router.put(
 /* -------------------------------------------------------------------------- */
 router.get("/:id", async (req, res) => {
   try {
-    const provider = await Provider.findById(req.params.id).lean();
+    const provider = await Provider.findById(req.params.id)
+      .populate("user", "-password")
+      .lean();
+
     if (!provider) return res.status(404).json({ message: "Provider not found" });
-    res.json(provider);
+
+    res.json(normalizeProvider(provider));
   } catch (err) {
     console.error("GET PROVIDER ERROR:", err);
     res.status(500).json({ message: "Server error fetching provider" });

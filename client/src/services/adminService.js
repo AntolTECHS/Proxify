@@ -26,6 +26,69 @@ const request = async (url, { method = "GET", token, body } = {}) => {
 };
 
 /* =========================
+   Helpers
+========================= */
+const normalizeDocuments = (docs) => {
+  if (!docs) return [];
+  const list = Array.isArray(docs) ? docs : [docs];
+
+  return list
+    .map((doc, index) => {
+      if (!doc) return null;
+
+      const path =
+        doc.path ||
+        doc.url ||
+        doc.fileUrl ||
+        doc.link ||
+        doc.secureUrl ||
+        doc.documentUrl ||
+        "";
+
+      const type = String(
+        doc.type || doc.mimeType || doc.format || doc.contentType || ""
+      ).toLowerCase();
+
+      const name =
+        doc.name ||
+        doc.title ||
+        doc.fileName ||
+        doc.originalName ||
+        doc.documentName ||
+        `Document ${index + 1}`;
+
+      return {
+        ...doc,
+        name,
+        path,
+        type,
+      };
+    })
+    .filter(Boolean);
+};
+
+const normalizeServices = (services) => {
+  if (!services) return [];
+  return Array.isArray(services) ? services : [services];
+};
+
+const normalizeProvider = (p) => {
+  if (!p) return null;
+
+  return {
+    ...p,
+    services: normalizeServices(p.services),
+    documents: normalizeDocuments(p.documents),
+    basicInfo: p.basicInfo || {},
+  };
+};
+
+const normalizeProviders = (providers) => {
+  if (!Array.isArray(providers)) return [];
+  return providers.map(normalizeProvider).filter(Boolean);
+};
+
+/* =========================
    Admin Service
 ========================= */
 export const adminService = {
@@ -38,13 +101,18 @@ export const adminService = {
   /* ================= USERS ================= */
   getUsers: async (token) => {
     const data = await request(`${API_URL}/admin/users`, { token });
-    return data.users;
+    return data.users || [];
   },
 
   /* ================= PROVIDERS ================= */
   getProviders: async (token) => {
     const data = await request(`${API_URL}/admin/providers`, { token });
-    return data.providers;
+    return normalizeProviders(data.providers || []);
+  },
+
+  getProviderById: async (id, token) => {
+    const data = await request(`${API_URL}/admin/providers/${id}`, { token });
+    return normalizeProvider(data.provider);
   },
 
   approveProvider: async (id, token) => {
@@ -52,7 +120,7 @@ export const adminService = {
       method: "PUT",
       token,
     });
-    return data.provider;
+    return normalizeProvider(data.provider);
   },
 
   rejectProvider: async (id, notes, token) => {
@@ -61,20 +129,20 @@ export const adminService = {
       token,
       body: { notes },
     });
-    return data.provider;
+    return normalizeProvider(data.provider);
   },
 
   /* ================= BOOKINGS ================= */
   getBookings: async (token) => {
     const data = await request(`${API_URL}/admin/bookings`, { token });
-    return data.bookings;
+    return data.bookings || [];
   },
 
   getBookingAnalytics: async (token) => {
     const data = await request(`${API_URL}/admin/analytics/bookings-per-day`, {
       token,
     });
-    return data.data;
+    return data.data || [];
   },
 
   updateBookingStatus: async (id, status, token) => {
@@ -83,7 +151,7 @@ export const adminService = {
       token,
       body: { status },
     });
-    return data.booking;
+    return data.booking || null;
   },
 
   deleteBooking: async (id, token) => {
@@ -96,7 +164,7 @@ export const adminService = {
   /* ================= SERVICES ================= */
   getServices: async (token) => {
     const data = await request(`${API_URL}/admin/services`, { token });
-    return data.services;
+    return data.services || [];
   },
 
   deleteService: async (id, token) => {

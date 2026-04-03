@@ -5,73 +5,126 @@ import { Input } from "../../components/ui/input";
 import { useAuth } from "../../context/AuthContext";
 import { adminService } from "../../services/adminService";
 
+const API_BASE_URL =
+  import.meta.env.VITE_API_URL ||
+  import.meta.env.VITE_BACKEND_URL ||
+  "http://localhost:5000";
+
+function resolveFileUrl(filePath) {
+  if (!filePath) return "";
+  if (/^https?:\/\//i.test(filePath)) return filePath;
+  if (filePath.startsWith("//")) return `https:${filePath}`;
+  return `${API_BASE_URL.replace(/\/$/, "")}${filePath.startsWith("/") ? "" : "/"}${filePath}`;
+}
+
+function formatKshPrice(value) {
+  if (value === null || value === undefined || value === "") return "KSh -";
+
+  const numericValue =
+    typeof value === "number"
+      ? value
+      : Number(String(value).replace(/[^0-9.-]/g, ""));
+
+  if (Number.isNaN(numericValue)) {
+    return `KSh ${value}`;
+  }
+
+  return `KSh ${new Intl.NumberFormat("en-KE").format(numericValue)}`;
+}
+
+function getStatusMeta(status, approvalBanner, rejectionReason) {
+  if (status === "approved") {
+    return {
+      label: approvalBanner || "Approved",
+      badgeClass: "bg-green-100 text-green-700 border-green-200",
+      bannerClass: "bg-green-50 text-green-700 border-green-200",
+    };
+  }
+
+  if (status === "rejected") {
+    return {
+      label: approvalBanner || "Rejected",
+      badgeClass: "bg-red-100 text-red-700 border-red-200",
+      bannerClass: "bg-red-50 text-red-700 border-red-200",
+      rejectionReason: rejectionReason || "",
+    };
+  }
+
+  return {
+    label: approvalBanner || "Pending admin approval",
+    badgeClass: "bg-yellow-100 text-yellow-700 border-yellow-200",
+    bannerClass: "bg-yellow-50 text-yellow-700 border-yellow-200",
+  };
+}
+
+function DocumentCard({ doc, onClickOpen, onPreview }) {
+  const url = resolveFileUrl(doc?.path);
+
+  return (
+    <div className="rounded-2xl border bg-gray-50 p-4">
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <p className="font-medium text-gray-900">{doc?.name || "Unnamed document"}</p>
+          <p className="text-sm text-gray-500">
+            {doc?.type || "Unknown type"} -{" "}
+            {doc?.size ? `${Math.round((doc.size / 1024) * 10) / 10} KB` : "Unknown size"}
+          </p>
+        </div>
+
+        <div className="flex gap-2">
+          {url && (
+            <>
+              <Button type="button" variant="secondary" onClick={() => onPreview(url, doc)}>
+                Preview
+              </Button>
+              <Button type="button" variant="outline" onClick={() => onClickOpen(url)}>
+                Open Document
+              </Button>
+            </>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function DetailRow({ label, value }) {
+  return (
+    <div className="rounded-2xl border bg-gray-50 p-4">
+      <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">{label}</p>
+      <p className="mt-1 text-sm font-medium text-gray-900">{value || "-"}</p>
+    </div>
+  );
+}
+
+function SectionTitle({ children }) {
+  return <h3 className="text-lg font-semibold text-gray-900">{children}</h3>;
+}
+
 export default function AdminProvidersPage() {
   const { token, user } = useAuth();
   const [providers, setProviders] = useState([]);
   const [search, setSearch] = useState("");
   const [loading, setLoading] = useState(true);
+  const [detailLoading, setDetailLoading] = useState(false);
   const [error, setError] = useState("");
   const [selectedProvider, setSelectedProvider] = useState(null);
   const [actionLoading, setActionLoading] = useState("");
+  const [activeTab, setActiveTab] = useState("services");
+  const [previewUrl, setPreviewUrl] = useState("");
+  const [previewDoc, setPreviewDoc] = useState(null);
 
-  const normalizeList = (data) => {
-    if (Array.isArray(data)) return data;
-    if (Array.isArray(data?.providers)) return data.providers;
-    if (Array.isArray(data?.data)) return data.data;
-    return [];
-  };
-
-  const getProviderName = (p) => p?.basicInfo?.providerName || p?.name || "Unnamed provider";
-  const getProviderEmail = (p) => p?.basicInfo?.email || p?.email || "-";
-
-  const getProviderPhoto = (provider) =>
-    provider?.basicInfo?.photoURL ||
-    provider?.photoURL ||
-    provider?.avatar ||
-    provider?.profilePhoto ||
-    provider?.image ||
-    "";
-
-  const getDocumentUrl = (doc) =>
-    doc?.path || doc?.url || doc?.fileUrl || doc?.link || doc?.secureUrl || "";
-
-  const getDocumentType = (doc) => String(doc?.type || doc?.mimeType || "").toLowerCase();
-
-  const normalizeDocuments = (provider) => {
-    const arrays = [
-      provider?.documents,
-      provider?.docs,
-      provider?.files,
-      provider?.attachments,
-      provider?.verificationDocuments,
-      provider?.basicInfo?.documents,
-      provider?.basicInfo?.files,
-      provider?.basicInfo?.attachments,
-    ];
-
-    return arrays
-      .filter(Array.isArray)
-      .flat()
-      .filter((doc) => doc && getDocumentUrl(doc));
-  };
-
-  const load = async () => {
+  const loadProviders = async () => {
     if (!token || user?.role !== "admin") return;
 
     setLoading(true);
     setError("");
 
     try {
-      const providersData = await adminService.getProviders(token);
-      const list = normalizeList(providersData).map((p) => ({
-        ...p,
-        services: Array.isArray(p.services) ? p.services : [],
-        documents: normalizeDocuments(p),
-      }));
-
-      setProviders(list);
+      const list = await adminService.getProviders(token);
+      setProviders(Array.isArray(list) ? list : []);
     } catch (err) {
-      setError(err?.response?.data?.message || err.message || "Failed to load data");
+      setError(err?.message || "Failed to load providers");
       setProviders([]);
     } finally {
       setLoading(false);
@@ -79,8 +132,7 @@ export default function AdminProvidersPage() {
   };
 
   useEffect(() => {
-    load();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    loadProviders();
   }, [token, user?.role]);
 
   const filteredProviders = useMemo(() => {
@@ -88,25 +140,29 @@ export default function AdminProvidersPage() {
     if (!q) return providers;
 
     return providers.filter((p) => {
-      const providerName = getProviderName(p);
-      const providerEmail = getProviderEmail(p);
-      const providerServices = Array.isArray(p.services) ? p.services : [];
-      const providerDocuments = Array.isArray(p.documents) ? p.documents : [];
+      const nameMatch = (p.basicInfo?.providerName || p.name || "").toLowerCase().includes(q);
+      const emailMatch = (p.basicInfo?.email || p.email || "").toLowerCase().includes(q);
+      const businessMatch = (p.basicInfo?.businessName || "").toLowerCase().includes(q);
+      const categoryMatch = (p.category || "").toLowerCase().includes(q);
+      const statusMatch = String(p.status || "").toLowerCase().includes(q);
 
-      const providerMatch =
-        providerName.toLowerCase().includes(q) || providerEmail.toLowerCase().includes(q);
-
-      const serviceMatch = providerServices.some((s) =>
-        (s.name || "").toLowerCase().includes(q)
+      const serviceMatch = (p.services || []).some((s) =>
+        String(s.name || s.title || "").toLowerCase().includes(q)
       );
 
-      const documentMatch = providerDocuments.some((d) =>
-        [d.name, d.title, d.fileName, d.type, d.category, d.status]
-          .filter(Boolean)
-          .some((value) => String(value).toLowerCase().includes(q))
+      const documentMatch = (p.documents || []).some((d) =>
+        [d?.name, d?.type, d?.path].filter(Boolean).some((v) => String(v).toLowerCase().includes(q))
       );
 
-      return providerMatch || serviceMatch || documentMatch;
+      return (
+        nameMatch ||
+        emailMatch ||
+        businessMatch ||
+        categoryMatch ||
+        statusMatch ||
+        serviceMatch ||
+        documentMatch
+      );
     });
   }, [providers, search]);
 
@@ -114,11 +170,11 @@ export default function AdminProvidersPage() {
     try {
       setActionLoading(id);
       await adminService.approveProvider(id, token);
-      await load();
+      await loadProviders();
 
       if (selectedProvider?._id === id) {
-        const updated = providers.find((p) => p._id === id);
-        setSelectedProvider(updated ? { ...updated, status: "approved" } : null);
+        const fullProvider = await adminService.getProviderById(id, token);
+        setSelectedProvider(fullProvider?.provider || fullProvider);
       }
     } finally {
       setActionLoading("");
@@ -132,87 +188,62 @@ export default function AdminProvidersPage() {
     try {
       setActionLoading(id);
       await adminService.rejectProvider(id, note.trim(), token);
-      await load();
+      await loadProviders();
 
       if (selectedProvider?._id === id) {
-        const updated = providers.find((p) => p._id === id);
-        setSelectedProvider(updated ? { ...updated, status: "rejected" } : null);
+        const fullProvider = await adminService.getProviderById(id, token);
+        setSelectedProvider(fullProvider?.provider || fullProvider);
       }
     } finally {
       setActionLoading("");
     }
   };
 
-  const openProvider = (provider) => {
-    setSelectedProvider({
-      ...provider,
-      services: Array.isArray(provider.services) ? provider.services : [],
-      documents: normalizeDocuments(provider),
-    });
-  };
+  const openProvider = async (provider) => {
+    if (!provider?._id) return;
 
-  const closeProvider = () => setSelectedProvider(null);
+    setSelectedProvider(provider);
+    setActiveTab("services");
+    setDetailLoading(true);
+    setError("");
 
-  const renderField = (label, value) => (
-    <div className="rounded-2xl border bg-gray-50 p-4">
-      <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">{label}</p>
-      <p className="mt-1 break-words text-sm text-gray-900">{value || "N/A"}</p>
-    </div>
-  );
-
-  const renderDocumentLink = (doc) => {
-    const url = getDocumentUrl(doc);
-    if (!url) return null;
-
-    return (
-      <a
-        href={url}
-        target="_blank"
-        rel="noreferrer"
-        className="inline-block text-sm font-medium text-sky-600 hover:underline"
-      >
-        Open document
-      </a>
-    );
-  };
-
-  const renderDocumentPreview = (doc) => {
-    const url = getDocumentUrl(doc);
-    const type = getDocumentType(doc);
-
-    if (!url) return null;
-
-    if (type.startsWith("image/") || /\.(png|jpe?g|gif|webp|bmp|svg)$/i.test(url)) {
-      return (
-        <a href={url} target="_blank" rel="noreferrer">
-          <img
-            src={url}
-            alt={doc?.name || doc?.title || "Document"}
-            className="mt-3 h-40 w-full rounded-2xl object-cover"
-          />
-        </a>
-      );
+    try {
+      const fullProvider = await adminService.getProviderById(provider._id, token);
+      setSelectedProvider(fullProvider?.provider || fullProvider);
+    } catch (err) {
+      setError(err?.message || "Failed to load provider details");
+    } finally {
+      setDetailLoading(false);
     }
-
-    if (type.includes("pdf") || /\.pdf$/i.test(url)) {
-      return (
-        <div className="mt-3 overflow-hidden rounded-2xl border bg-white">
-          <iframe
-            src={url}
-            title={doc?.name || "PDF Preview"}
-            className="h-64 w-full"
-          />
-        </div>
-      );
-    }
-
-    return (
-      <div className="mt-3 rounded-2xl border bg-white p-3">
-        <p className="text-sm text-gray-600">Preview not available.</p>
-        <div className="mt-2">{renderDocumentLink(doc)}</div>
-      </div>
-    );
   };
+
+  const closeProvider = () => {
+    setSelectedProvider(null);
+    setActiveTab("services");
+    setDetailLoading(false);
+  };
+
+  const handleOpenDocument = (url) => {
+    if (!url) return;
+    window.open(url, "_blank", "noopener,noreferrer");
+  };
+
+  const handlePreviewDocument = (url, doc) => {
+    if (!url) return;
+    setPreviewUrl(url);
+    setPreviewDoc(doc || null);
+  };
+
+  const closePreview = () => {
+    setPreviewUrl("");
+    setPreviewDoc(null);
+  };
+
+  const isPreviewImage =
+    previewDoc?.type?.startsWith("image/") ||
+    /\.(png|jpe?g|gif|webp|bmp|svg)$/i.test(previewUrl);
+
+  const isPreviewPdf = previewDoc?.type?.includes("pdf") || /\.pdf$/i.test(previewUrl);
 
   if (!token || user?.role !== "admin") {
     return <div className="rounded-3xl bg-white p-6 shadow-sm">Access denied.</div>;
@@ -226,23 +257,18 @@ export default function AdminProvidersPage() {
     <div className="space-y-6">
       <div className="rounded-3xl bg-white p-6 shadow-sm">
         <h1 className="text-3xl font-bold text-gray-900">Providers & Services</h1>
-        <p className="mt-1 text-gray-600">
-          Review providers, their services, uploaded documents, and profile photos.
-        </p>
-        {error ? (
-          <p className="mt-3 rounded-xl bg-red-50 px-4 py-3 text-sm text-red-700">{error}</p>
-        ) : null}
+        <p className="mt-1 text-gray-600">Review providers, services, and uploaded documents.</p>
+        {error && <p className="mt-3 rounded-xl bg-red-50 px-4 py-3 text-sm text-red-700">{error}</p>}
       </div>
 
       <Card className="border-0 shadow-sm">
         <CardContent className="p-6">
-          <div className="mb-5">
-            <Input
-              placeholder="Search provider, service, or document..."
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-            />
-          </div>
+          <Input
+            placeholder="Search provider, service, document, status, or category..."
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            className="mb-5"
+          />
 
           {filteredProviders.length === 0 ? (
             <div className="rounded-2xl border bg-gray-50 p-6 text-sm text-gray-600">
@@ -251,12 +277,13 @@ export default function AdminProvidersPage() {
           ) : (
             <div className="grid gap-4 lg:grid-cols-2">
               {filteredProviders.map((p) => {
-                const providerName = getProviderName(p);
-                const providerEmail = getProviderEmail(p);
-                const providerPhoto = getProviderPhoto(p);
-                const providerServices = Array.isArray(p.services) ? p.services : [];
-                const providerDocuments = Array.isArray(p.documents) ? p.documents : [];
-                const isPending = p.status !== "approved";
+                const providerName = p.basicInfo?.providerName || p.name || "Unnamed provider";
+                const providerEmail = p.basicInfo?.email || p.email || "-";
+                const providerPhoto = resolveFileUrl(
+                  p.basicInfo?.photoURL || p.photoURL || p.avatar || ""
+                );
+                const statusMeta = getStatusMeta(p.status, p.approvalBanner, p.rejectionReason);
+                const isPending = p.status === "pending";
 
                 return (
                   <div
@@ -264,6 +291,17 @@ export default function AdminProvidersPage() {
                     onClick={() => openProvider(p)}
                     className="cursor-pointer rounded-3xl border bg-white p-5 shadow-sm transition hover:shadow-md"
                   >
+                    <div
+                      className={`mb-4 rounded-2xl border px-4 py-3 text-sm font-medium ${statusMeta.bannerClass}`}
+                    >
+                      {statusMeta.label}
+                      {p.status === "rejected" && p.rejectionReason ? (
+                        <span className="mt-1 block text-xs font-normal text-red-600">
+                          Reason: {p.rejectionReason}
+                        </span>
+                      ) : null}
+                    </div>
+
                     <div className="flex items-start justify-between gap-4">
                       <div className="flex items-start gap-4">
                         <div className="h-16 w-16 overflow-hidden rounded-2xl border bg-gray-100">
@@ -288,16 +326,27 @@ export default function AdminProvidersPage() {
                         <div>
                           <h3 className="text-lg font-semibold text-gray-900">{providerName}</h3>
                           <p className="text-sm text-gray-500">{providerEmail}</p>
-                          <p className="mt-2 text-sm font-medium">
-                            Status:{" "}
+                          {p.basicInfo?.businessName ? (
+                            <p className="mt-1 text-sm text-gray-500">
+                              Business: {p.basicInfo.businessName}
+                            </p>
+                          ) : null}
+                          {p.category ? (
+                            <p className="mt-1 text-sm text-gray-500">Category: {p.category}</p>
+                          ) : null}
+
+                          <div className="mt-3 flex flex-wrap items-center gap-2">
                             <span
-                              className={
-                                p.status === "approved" ? "text-green-600" : "text-yellow-600"
-                              }
+                              className={`inline-flex items-center rounded-full border px-3 py-1 text-xs font-semibold ${statusMeta.badgeClass}`}
                             >
-                              {p.status || "Pending"}
+                              {statusMeta.label}
                             </span>
-                          </p>
+                            {p.isVerified ? (
+                              <span className="inline-flex items-center rounded-full border border-green-200 bg-green-50 px-3 py-1 text-xs font-semibold text-green-700">
+                                Verified
+                              </span>
+                            ) : null}
+                          </div>
                         </div>
                       </div>
 
@@ -322,101 +371,6 @@ export default function AdminProvidersPage() {
                         </div>
                       )}
                     </div>
-
-                    <div className="mt-5">
-                      <div className="mb-3 flex items-center justify-between">
-                        <h4 className="font-semibold text-gray-900">Services</h4>
-                        <span className="rounded-full bg-gray-100 px-3 py-1 text-xs text-gray-600">
-                          {providerServices.length}
-                        </span>
-                      </div>
-
-                      {providerServices.length === 0 ? (
-                        <p className="text-sm text-gray-500">No services found</p>
-                      ) : (
-                        <div className="space-y-3">
-                          {providerServices.slice(0, 3).map((s, index) => {
-                            const serviceId = s._id || s.id || `${p._id}-${index}`;
-
-                            return (
-                              <div
-                                key={serviceId}
-                                className="rounded-2xl border border-gray-200 bg-gray-50 p-4"
-                              >
-                                <div className="flex items-start justify-between gap-3">
-                                  <div>
-                                    <p className="font-medium text-gray-900">
-                                      {s.name || "Unnamed service"}
-                                    </p>
-                                    <p className="text-sm text-gray-500">
-                                      {s.description || "No description"}
-                                    </p>
-                                  </div>
-
-                                  <div className="text-right text-sm font-semibold text-gray-900">
-                                    {s.price ?? s.cost ?? "-"}
-                                  </div>
-                                </div>
-                              </div>
-                            );
-                          })}
-
-                          {providerServices.length > 3 && (
-                            <p className="text-sm text-gray-500">
-                              +{providerServices.length - 3} more services
-                            </p>
-                          )}
-                        </div>
-                      )}
-                    </div>
-
-                    <div className="mt-5">
-                      <div className="mb-3 flex items-center justify-between">
-                        <h4 className="font-semibold text-gray-900">Documents</h4>
-                        <span className="rounded-full bg-gray-100 px-3 py-1 text-xs text-gray-600">
-                          {providerDocuments.length}
-                        </span>
-                      </div>
-
-                      {providerDocuments.length === 0 ? (
-                        <p className="text-sm text-gray-500">No documents found</p>
-                      ) : (
-                        <div className="space-y-3">
-                          {providerDocuments.slice(0, 2).map((d, index) => {
-                            const documentId = d._id || d.id || `${p._id}-doc-${index}`;
-                            return (
-                              <div
-                                key={documentId}
-                                className="rounded-2xl border border-gray-200 bg-gray-50 p-4"
-                              >
-                                <div className="flex items-start justify-between gap-3">
-                                  <div>
-                                    <p className="font-medium text-gray-900">
-                                      {d.name || d.title || d.fileName || "Unnamed document"}
-                                    </p>
-                                    <p className="text-sm text-gray-500">
-                                      {d.type || d.category || d.mimeType || "Document"}
-                                    </p>
-                                  </div>
-
-                                  <div className="text-right text-sm text-gray-600">
-                                    {renderDocumentLink(d)}
-                                  </div>
-                                </div>
-
-                                {renderDocumentPreview(d)}
-                              </div>
-                            );
-                          })}
-
-                          {providerDocuments.length > 2 && (
-                            <p className="text-sm text-gray-500">
-                              +{providerDocuments.length - 2} more documents
-                            </p>
-                          )}
-                        </div>
-                      )}
-                    </div>
                   </div>
                 );
               })}
@@ -431,35 +385,64 @@ export default function AdminProvidersPage() {
           onClick={closeProvider}
         >
           <div
-            className="w-full max-w-5xl max-h-[90vh] overflow-y-auto rounded-3xl bg-white p-6 shadow-2xl"
+            className="w-full max-w-6xl max-h-[92vh] overflow-y-auto rounded-3xl bg-white p-6 shadow-2xl"
             onClick={(e) => e.stopPropagation()}
           >
             <div className="flex items-start justify-between gap-4 border-b pb-4">
               <div className="flex items-start gap-4">
                 <div className="h-20 w-20 overflow-hidden rounded-2xl border bg-gray-100">
-                  {getProviderPhoto(selectedProvider) ? (
+                  {selectedProvider.basicInfo?.photoURL ? (
                     <img
-                      src={getProviderPhoto(selectedProvider)}
-                      alt={getProviderName(selectedProvider)}
+                      src={resolveFileUrl(selectedProvider.basicInfo.photoURL)}
+                      alt={selectedProvider.basicInfo.providerName || "Provider"}
                       className="h-full w-full object-cover"
                     />
                   ) : (
                     <div className="flex h-full w-full items-center justify-center text-xl font-semibold text-gray-500">
-                      {getProviderName(selectedProvider)
+                      {(selectedProvider.basicInfo?.providerName || selectedProvider.name || "P")
                         .split(" ")
                         .filter(Boolean)
                         .slice(0, 2)
                         .map((w) => w[0]?.toUpperCase())
-                        .join("") || "P"}
+                        .join("")}
                     </div>
                   )}
                 </div>
 
                 <div>
                   <h2 className="text-2xl font-bold text-gray-900">
-                    {getProviderName(selectedProvider)}
+                    {selectedProvider.basicInfo?.providerName ||
+                      selectedProvider.name ||
+                      "Unnamed provider"}
                   </h2>
-                  <p className="text-sm text-gray-500">{getProviderEmail(selectedProvider)}</p>
+                  <p className="text-sm text-gray-500">
+                    {selectedProvider.basicInfo?.email || selectedProvider.email || "-"}
+                  </p>
+
+                  <div className="mt-3 flex flex-wrap items-center gap-2">
+                    <span
+                      className={`inline-flex items-center rounded-full border px-3 py-1 text-xs font-semibold ${
+                        selectedProvider.status === "approved"
+                          ? "border-green-200 bg-green-50 text-green-700"
+                          : selectedProvider.status === "rejected"
+                          ? "border-red-200 bg-red-50 text-red-700"
+                          : "border-yellow-200 bg-yellow-50 text-yellow-700"
+                      }`}
+                    >
+                      {selectedProvider.approvalBanner ||
+                        (selectedProvider.status === "approved"
+                          ? "Approved"
+                          : selectedProvider.status === "rejected"
+                          ? "Rejected"
+                          : "Pending admin approval")}
+                    </span>
+
+                    {selectedProvider.isVerified ? (
+                      <span className="inline-flex items-center rounded-full border border-green-200 bg-green-50 px-3 py-1 text-xs font-semibold text-green-700">
+                        Verified
+                      </span>
+                    ) : null}
+                  </div>
                 </div>
               </div>
 
@@ -471,181 +454,239 @@ export default function AdminProvidersPage() {
               </button>
             </div>
 
-            <div className="mt-5 grid gap-4 md:grid-cols-2">
-              {renderField("Provider ID", selectedProvider._id)}
-              {renderField("Status", selectedProvider.status || "Pending")}
-              {renderField("Phone", selectedProvider.basicInfo?.phone || selectedProvider.phone)}
-              {renderField("Location", selectedProvider.basicInfo?.location || selectedProvider.location)}
-              {renderField("Category", selectedProvider.basicInfo?.category || selectedProvider.category)}
-              {renderField(
-                "Created At",
-                selectedProvider.createdAt
-                  ? new Date(selectedProvider.createdAt).toLocaleString()
-                  : selectedProvider.basicInfo?.createdAt
-              )}
-              {renderField(
-                "Updated At",
-                selectedProvider.updatedAt
-                  ? new Date(selectedProvider.updatedAt).toLocaleString()
-                  : selectedProvider.basicInfo?.updatedAt
-              )}
-              {renderField("Role", selectedProvider.role || "provider")}
-            </div>
+            {selectedProvider.status === "rejected" && selectedProvider.rejectionReason ? (
+              <div className="mt-4 rounded-2xl border border-red-200 bg-red-50 p-4 text-sm text-red-700">
+                <strong>Rejection reason:</strong> {selectedProvider.rejectionReason}
+              </div>
+            ) : null}
 
-            {selectedProvider.basicInfo && (
-              <div className="mt-6">
-                <h3 className="mb-3 text-lg font-semibold text-gray-900">Basic Information</h3>
-                <div className="grid gap-4 md:grid-cols-2">
-                  {renderField("Full Name", selectedProvider.basicInfo.fullName)}
-                  {renderField("Business Name", selectedProvider.basicInfo.businessName)}
-                  {renderField("Provider Name", selectedProvider.basicInfo.providerName)}
-                  {renderField("Email", selectedProvider.basicInfo.email)}
-                  {renderField("Phone", selectedProvider.basicInfo.phone)}
-                  {renderField("Address", selectedProvider.basicInfo.address)}
-                  {renderField("City", selectedProvider.basicInfo.city)}
-                  {renderField("State", selectedProvider.basicInfo.state)}
-                  {renderField("Country", selectedProvider.basicInfo.country)}
-                  {renderField("Website", selectedProvider.basicInfo.website)}
-                  {renderField("Bio / Description", selectedProvider.basicInfo.bio)}
+            {detailLoading ? (
+              <div className="mt-6 rounded-2xl border bg-gray-50 p-6 text-sm text-gray-600">
+                Loading provider details...
+              </div>
+            ) : (
+              <div className="mt-6 space-y-8">
+                <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+                  <DetailRow label="Provider Name" value={selectedProvider.basicInfo?.providerName} />
+                  <DetailRow label="Email" value={selectedProvider.basicInfo?.email} />
+                  <DetailRow label="Phone" value={selectedProvider.basicInfo?.phone} />
+                  <DetailRow label="Business Name" value={selectedProvider.basicInfo?.businessName} />
+                  <DetailRow label="Category" value={selectedProvider.category} />
+                  <DetailRow
+                    label="Experience"
+                    value={
+                      selectedProvider.experience != null
+                        ? `${selectedProvider.experience} years`
+                        : "-"
+                    }
+                  />
+                  <DetailRow
+                    label="Rating"
+                    value={
+                      selectedProvider.rating != null
+                        ? selectedProvider.rating.toFixed?.(1) ?? selectedProvider.rating
+                        : "-"
+                    }
+                  />
+                  <DetailRow
+                    label="Reviews"
+                    value={selectedProvider.reviewCount != null ? selectedProvider.reviewCount : "-"}
+                  />
+                  <DetailRow
+                    label="Availability Status"
+                    value={selectedProvider.availabilityStatus}
+                  />
+                  <DetailRow
+                    label="Status"
+                    value={selectedProvider.approvalBanner || selectedProvider.status}
+                  />
+                  <DetailRow label="Location Text" value={selectedProvider.basicInfo?.location} />
+                  <DetailRow
+                    label="GPS Coordinates"
+                    value={
+                      Array.isArray(selectedProvider.location?.coordinates)
+                        ? `${selectedProvider.location.coordinates[1] ?? "-"}, ${
+                            selectedProvider.location.coordinates[0] ?? "-"
+                          }`
+                        : "-"
+                    }
+                  />
+                </div>
+
+                {selectedProvider.bio ? (
+                  <div className="rounded-2xl border bg-gray-50 p-4">
+                    <SectionTitle>Bio</SectionTitle>
+                    <p className="mt-2 text-sm text-gray-700">{selectedProvider.bio}</p>
+                  </div>
+                ) : null}
+
+                <div className="rounded-2xl border bg-gray-50 p-4">
+                  <div className="flex items-center justify-between gap-3">
+                    <SectionTitle>Services</SectionTitle>
+                    <span className="text-sm text-gray-500">
+                      {selectedProvider.services?.length || 0} service(s)
+                    </span>
+                  </div>
+
+                  <div className="mt-4 space-y-3">
+                    {(selectedProvider.services?.length || 0) === 0 ? (
+                      <p className="text-sm text-gray-500">No services found</p>
+                    ) : (
+                      selectedProvider.services.map((s, idx) => (
+                        <div key={s._id || s.id || idx} className="rounded-2xl border bg-white p-4">
+                          <div className="flex items-start justify-between gap-4">
+                            <div>
+                              <p className="font-medium text-gray-900">
+                                {s.name || s.title || "Unnamed service"}
+                              </p>
+                              <p className="text-sm text-gray-500">
+                                {s.description || "No description"}
+                              </p>
+                            </div>
+                            <div className="text-sm font-semibold text-gray-900">
+                              {formatKshPrice(s.price ?? s.cost)}
+                            </div>
+                          </div>
+                        </div>
+                      ))
+                    )}
+                  </div>
+                </div>
+
+                <div className="rounded-2xl border bg-gray-50 p-4">
+                  <div className="flex items-center justify-between gap-3">
+                    <SectionTitle>Documents</SectionTitle>
+                    <span className="text-sm text-gray-500">
+                      {selectedProvider.documents?.length || 0} document(s)
+                    </span>
+                  </div>
+
+                  <div className="mt-4 space-y-3">
+                    {(selectedProvider.documents?.length || 0) === 0 ? (
+                      <p className="text-sm text-gray-500">No documents found</p>
+                    ) : (
+                      selectedProvider.documents.map((doc, idx) => (
+                        <DocumentCard
+                          key={doc._id || doc.id || idx}
+                          doc={doc}
+                          onClickOpen={handleOpenDocument}
+                          onPreview={handlePreviewDocument}
+                        />
+                      ))
+                    )}
+                  </div>
+                </div>
+
+                <div className="rounded-2xl border bg-gray-50 p-4">
+                  <SectionTitle>Availability</SectionTitle>
+                  <div className="mt-4 grid gap-4 sm:grid-cols-3">
+                    <DetailRow
+                      label="Days"
+                      value={
+                        Array.isArray(selectedProvider.availability?.days) &&
+                        selectedProvider.availability.days.length > 0
+                          ? selectedProvider.availability.days.join(", ")
+                          : "Not set"
+                      }
+                    />
+                    <DetailRow
+                      label="Start"
+                      value={selectedProvider.availability?.start || "Not set"}
+                    />
+                    <DetailRow
+                      label="End"
+                      value={selectedProvider.availability?.end || "Not set"}
+                    />
+                  </div>
+                </div>
+
+                <div className="rounded-2xl border bg-gray-50 p-4">
+                  <SectionTitle>Account / Metadata</SectionTitle>
+                  <div className="mt-4 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+                    <DetailRow label="Role" value={selectedProvider.user?.role || "-"} />
+                    <DetailRow label="User Name" value={selectedProvider.user?.name || "-"} />
+                    <DetailRow label="User Email" value={selectedProvider.user?.email || "-"} />
+                    <DetailRow
+                      label="Created"
+                      value={
+                        selectedProvider.createdAt
+                          ? new Date(selectedProvider.createdAt).toLocaleString()
+                          : "-"
+                      }
+                    />
+                  </div>
+                </div>
+
+                <div className="flex flex-col gap-3 border-t pt-4 sm:flex-row sm:justify-end">
+                  <Button onClick={closeProvider} variant="outline">
+                    Close
+                  </Button>
+
+                  {selectedProvider.status === "pending" && (
+                    <>
+                      <Button
+                        onClick={() => handleApprove(selectedProvider._id)}
+                        disabled={actionLoading === selectedProvider._id}
+                      >
+                        {actionLoading === selectedProvider._id ? "Working..." : "Approve Provider"}
+                      </Button>
+                      <Button
+                        variant="destructive"
+                        onClick={() => handleReject(selectedProvider._id)}
+                        disabled={actionLoading === selectedProvider._id}
+                      >
+                        Reject Provider
+                      </Button>
+                    </>
+                  )}
                 </div>
               </div>
             )}
+          </div>
+        </div>
+      )}
 
-            <div className="mt-6">
-              <div className="mb-3 flex items-center justify-between">
-                <h3 className="text-lg font-semibold text-gray-900">Services</h3>
-                <span className="rounded-full bg-gray-100 px-3 py-1 text-xs text-gray-600">
-                  {Array.isArray(selectedProvider.services) ? selectedProvider.services.length : 0}
-                </span>
+      {previewUrl && (
+        <div
+          className="fixed inset-0 z-[60] flex items-center justify-center bg-black/60 px-4 py-6"
+          onClick={closePreview}
+        >
+          <div
+            className="w-full max-w-5xl overflow-hidden rounded-3xl bg-white shadow-2xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between border-b px-5 py-4">
+              <div>
+                <p className="text-lg font-semibold text-gray-900">
+                  {previewDoc?.name || "Document Preview"}
+                </p>
+                <p className="text-sm text-gray-500">{previewDoc?.type || "Unknown type"}</p>
               </div>
-
-              {Array.isArray(selectedProvider.services) && selectedProvider.services.length > 0 ? (
-                <div className="max-h-[320px] space-y-3 overflow-y-auto pr-1">
-                  {selectedProvider.services.map((s, index) => {
-                    const serviceId = s._id || s.id || `${selectedProvider._id}-${index}`;
-                    return (
-                      <div
-                        key={serviceId}
-                        className="rounded-2xl border border-gray-200 bg-gray-50 p-4"
-                      >
-                        <div className="flex items-start justify-between gap-3">
-                          <div>
-                            <p className="font-medium text-gray-900">{s.name || "Unnamed service"}</p>
-                            <p className="text-sm text-gray-500">
-                              {s.description || "No description"}
-                            </p>
-                          </div>
-                          <div className="text-right text-sm font-semibold text-gray-900">
-                            {s.price ?? s.cost ?? "-"}
-                          </div>
-                        </div>
-
-                        <div className="mt-3 grid gap-3 sm:grid-cols-2">
-                          {s.duration && (
-                            <div className="text-sm text-gray-600">
-                              <span className="font-medium text-gray-900">Duration:</span>{" "}
-                              {s.duration}
-                            </div>
-                          )}
-                          {s.category && (
-                            <div className="text-sm text-gray-600">
-                              <span className="font-medium text-gray-900">Category:</span>{" "}
-                              {s.category}
-                            </div>
-                          )}
-                          {s.location && (
-                            <div className="text-sm text-gray-600">
-                              <span className="font-medium text-gray-900">Location:</span>{" "}
-                              {s.location}
-                            </div>
-                          )}
-                          {s.status && (
-                            <div className="text-sm text-gray-600">
-                              <span className="font-medium text-gray-900">Status:</span> {s.status}
-                            </div>
-                          )}
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              ) : (
-                <p className="text-sm text-gray-500">No services found.</p>
-              )}
+              <button
+                onClick={closePreview}
+                className="rounded-full px-3 py-1 text-2xl leading-none text-gray-500 hover:bg-gray-100"
+              >
+                ×
+              </button>
             </div>
 
-            <div className="mt-6">
-              <div className="mb-3 flex items-center justify-between">
-                <h3 className="text-lg font-semibold text-gray-900">Documents</h3>
-                <span className="rounded-full bg-gray-100 px-3 py-1 text-xs text-gray-600">
-                  {Array.isArray(selectedProvider.documents) ? selectedProvider.documents.length : 0}
-                </span>
-              </div>
-
-              {Array.isArray(selectedProvider.documents) && selectedProvider.documents.length > 0 ? (
-                <div className="max-h-[360px] space-y-3 overflow-y-auto pr-1">
-                  {selectedProvider.documents.map((doc, index) => {
-                    const documentId = doc._id || doc.id || `${selectedProvider._id}-doc-${index}`;
-
-                    return (
-                      <div
-                        key={documentId}
-                        className="rounded-2xl border border-gray-200 bg-gray-50 p-4"
-                      >
-                        <div className="flex items-start justify-between gap-3">
-                          <div>
-                            <p className="font-medium text-gray-900">
-                              {doc.name || doc.title || doc.fileName || "Unnamed document"}
-                            </p>
-                            <p className="text-sm text-gray-500">
-                              {doc.type || doc.category || doc.mimeType || "Document"}
-                            </p>
-                          </div>
-
-                          <div className="text-right text-sm text-gray-600">
-                            {renderDocumentLink(doc)}
-                          </div>
-                        </div>
-
-                        <div className="mt-3 grid gap-3 sm:grid-cols-2">
-                          {doc.size !== undefined && (
-                            <div className="text-sm text-gray-600">
-                              <span className="font-medium text-gray-900">Size:</span>{" "}
-                              {Math.round((doc.size / 1024) * 10) / 10} KB
-                            </div>
-                          )}
-                        </div>
-
-                        {renderDocumentPreview(doc)}
-                      </div>
-                    );
-                  })}
-                </div>
+            <div className="max-h-[85vh] overflow-y-auto bg-gray-100 p-4">
+              {isPreviewImage ? (
+                <img
+                  src={previewUrl}
+                  alt={previewDoc?.name || "Document preview"}
+                  className="mx-auto max-h-[80vh] w-auto rounded-2xl shadow"
+                />
+              ) : isPreviewPdf ? (
+                <iframe
+                  src={previewUrl}
+                  title={previewDoc?.name || "Document preview"}
+                  className="h-[80vh] w-full rounded-2xl bg-white"
+                />
               ) : (
-                <p className="text-sm text-gray-500">No documents found.</p>
-              )}
-            </div>
-
-            <div className="mt-6 flex flex-col gap-3 border-t pt-4 sm:flex-row sm:justify-end">
-              <Button onClick={closeProvider} variant="outline">
-                Close
-              </Button>
-              {selectedProvider.status !== "approved" && (
-                <>
-                  <Button
-                    onClick={() => handleApprove(selectedProvider._id)}
-                    disabled={actionLoading === selectedProvider._id}
-                  >
-                    {actionLoading === selectedProvider._id ? "Working..." : "Approve Provider"}
-                  </Button>
-                  <Button
-                    variant="destructive"
-                    onClick={() => handleReject(selectedProvider._id)}
-                    disabled={actionLoading === selectedProvider._id}
-                  >
-                    Reject Provider
-                  </Button>
-                </>
+                <div className="rounded-2xl bg-white p-6 text-sm text-gray-600">
+                  This file type cannot be previewed inline. Use Open Document to view it.
+                </div>
               )}
             </div>
           </div>

@@ -34,6 +34,8 @@ export default function ProviderDashboard() {
   const [chartData, setChartData] = useState([]);
   const [chartView, setChartView] = useState("jobs");
   const [modal, setModal] = useState(null);
+  const [providerStatus, setProviderStatus] = useState("pending");
+  const [providerBanner, setProviderBanner] = useState("Pending admin approval");
 
   const [stats, setStats] = useState([
     { title: "Total Jobs", value: 0, icon: <FaClipboardList className="text-white w-6 h-6" /> },
@@ -62,6 +64,17 @@ export default function ProviderDashboard() {
 
       const providerData = await providerRes.json();
 
+      const status = providerData?.status || "pending";
+      const banner =
+        status === "approved"
+          ? "Approved"
+          : status === "rejected"
+          ? "Rejected"
+          : "Pending admin approval";
+
+      setProviderStatus(status);
+      setProviderBanner(banner);
+
       /* -----------------------------
          Fetch Bookings (Jobs)
       ----------------------------- */
@@ -78,21 +91,11 @@ export default function ProviderDashboard() {
          Compute Stats
       ----------------------------- */
       const totalJobs = bookings.length;
-
       const pendingJobs = bookings.filter((j) => j.status === "pending").length;
-
       const completedJobs = bookings.filter((j) => j.status === "completed");
-
-      const totalEarnings = completedJobs.reduce(
-        (sum, j) => sum + (j.price || 0),
-        0
-      );
-
-      const uniqueCustomers = new Set(
-        bookings.map((j) => j.customer?._id)
-      ).size;
-
-      const rating = providerData?.provider?.rating || 0;
+      const totalEarnings = completedJobs.reduce((sum, j) => sum + (j.price || 0), 0);
+      const uniqueCustomers = new Set(bookings.map((j) => j.customer?._id)).size;
+      const rating = providerData?.rating || 0;
 
       setStats((prev) =>
         prev.map((s) => {
@@ -131,15 +134,31 @@ export default function ProviderDashboard() {
     }
   };
 
+  const statusStyles =
+    providerStatus === "approved"
+      ? "bg-green-100 border-green-400 text-green-700"
+      : providerStatus === "rejected"
+      ? "bg-red-100 border-red-400 text-red-700"
+      : "bg-blue-100 border-blue-400 text-blue-700";
+
   return (
     <div className="w-full min-h-screen bg-gray-100 p-4 md:p-6">
-      {/* Pending Verification */}
-      {user?.providerStatus === "pending" && (
-        <div className="mb-6 p-4 flex items-center bg-blue-100 border-l-4 border-blue-400 text-blue-700 rounded">
-          <FaExclamationTriangle className="w-6 h-6 mr-3" />
-          <span>Your provider profile is under review. Verification pending.</span>
+      {/* Provider Status Banner */}
+      <div className={`mb-6 p-4 flex items-center border-l-4 rounded ${statusStyles}`}>
+        <FaExclamationTriangle className="w-6 h-6 mr-3" />
+        <div>
+          <p className="font-semibold">Provider Status: {providerBanner}</p>
+          {providerStatus === "pending" && (
+            <p className="text-sm">Your provider profile is under review. Please wait for admin approval.</p>
+          )}
+          {providerStatus === "rejected" && (
+            <p className="text-sm">Your provider profile was rejected. Please check with admin for details.</p>
+          )}
+          {providerStatus === "approved" && (
+            <p className="text-sm">Your provider profile is active and approved.</p>
+          )}
         </div>
-      )}
+      </div>
 
       <h1 className="text-3xl font-bold text-gray-800 mb-8">
         Welcome, {user?.name || "Provider"}!

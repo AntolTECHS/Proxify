@@ -11,7 +11,10 @@ cloudinary.config({
 export const uploadBuffer = (buffer, folder) =>
   new Promise((resolve, reject) => {
     const stream = cloudinary.uploader.upload_stream(
-      { folder },
+      {
+        folder,
+        resource_type: "raw", // important for docs
+      },
       (error, result) => {
         if (error) reject(error);
         else resolve(result);
