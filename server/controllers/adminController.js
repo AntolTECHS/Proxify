@@ -15,23 +15,29 @@ const checkAdmin = (req, res) => {
 };
 
 /* ======================================================
+   HELPER: Format provider status
+====================================================== */
+const formatProviderStatus = (status) => {
+  if (status === "approved") return "Approved";
+  if (status === "rejected") return "Rejected";
+  return "Pending admin approval";
+};
+
+/* ======================================================
    HELPER: Normalize provider for safe response
 ====================================================== */
 const normalizeProvider = (provider) => {
   if (!provider) return provider;
 
-  const plain = typeof provider.toObject === "function" ? provider.toObject() : provider;
+  const plain =
+    typeof provider.toObject === "function" ? provider.toObject() : provider;
 
   return {
     ...plain,
     services: Array.isArray(plain.services) ? plain.services : [],
     documents: Array.isArray(plain.documents) ? plain.documents : [],
-    approvalBanner:
-      plain.status === "approved"
-        ? "Approved"
-        : plain.status === "rejected"
-        ? "Rejected"
-        : "Pending admin approval",
+    resubmissions: Array.isArray(plain.resubmissions) ? plain.resubmissions : [],
+    approvalBanner: plain.approvalBanner || formatProviderStatus(plain.status),
     isApproved: plain.status === "approved",
     isPending: plain.status === "pending",
     isRejected: plain.status === "rejected",
@@ -44,7 +50,8 @@ const normalizeProvider = (provider) => {
 const normalizeBooking = (booking) => {
   if (!booking) return booking;
 
-  const plain = typeof booking.toObject === "function" ? booking.toObject() : booking;
+  const plain =
+    typeof booking.toObject === "function" ? booking.toObject() : booking;
 
   return {
     ...plain,
@@ -178,6 +185,25 @@ exports.getPendingProviders = async (req, res) => {
   }
 };
 
+exports.getRejectedProviders = async (req, res) => {
+  if (!checkAdmin(req, res)) return;
+
+  try {
+    const providers = await Provider.find({ status: "rejected" })
+      .populate("user", "name email role")
+      .sort({ createdAt: -1 })
+      .lean();
+
+    res.json({
+      success: true,
+      providers: providers.map(normalizeProvider),
+    });
+  } catch (error) {
+    console.error("Rejected providers error:", error);
+    res.status(500).json({ success: false, message: error.message });
+  }
+};
+
 /* ======================================================
    APPROVE PROVIDER
 ====================================================== */
@@ -195,7 +221,9 @@ exports.approveProvider = async (req, res) => {
     }
 
     provider.status = "approved";
+    provider.approvalBanner = "Approved";
     provider.rejectionReason = "";
+
     await provider.save();
 
     res.json({
@@ -216,9 +244,9 @@ exports.rejectProvider = async (req, res) => {
   if (!checkAdmin(req, res)) return;
 
   try {
-    const reason = req.body?.notes || req.body?.reason;
+    const reason = req.body?.notes || req.body?.reason || req.body?.rejectionReason;
 
-    if (!reason || !reason.trim()) {
+    if (!reason || !String(reason).trim()) {
       return res.status(400).json({
         success: false,
         message: "Rejection reason is required",
@@ -235,7 +263,9 @@ exports.rejectProvider = async (req, res) => {
     }
 
     provider.status = "rejected";
-    provider.rejectionReason = reason.trim();
+    provider.approvalBanner = "Rejected";
+    provider.rejectionReason = String(reason).trim();
+
     await provider.save();
 
     res.json({

@@ -20,23 +20,37 @@ export default function ProviderJobs() {
   const [modalJob, setModalJob] = useState(null);
   const [loading, setLoading] = useState(true);
   const [showChat, setShowChat] = useState(false);
-
-  useEffect(() => {
-    fetchJobs();
-  }, []);
+  const [error, setError] = useState("");
 
   const fetchJobs = async () => {
+    if (!token) return;
+
+    setLoading(true);
+    setError("");
+
     try {
       const res = await fetch(`${API}/bookings/provider`, {
         headers: { Authorization: `Bearer ${token}` },
       });
+
       const data = await res.json();
-      if (res.ok) setJobs(data.bookings || []);
+
+      if (!res.ok) {
+        throw new Error(data?.message || "Failed to load jobs");
+      }
+
+      setJobs(data.bookings || []);
     } catch (err) {
       console.error("Fetch jobs error:", err);
+      setError(err?.message || "Failed to load jobs");
+    } finally {
+      setLoading(false);
     }
-    setLoading(false);
   };
+
+  useEffect(() => {
+    fetchJobs();
+  }, [token]);
 
   const updateStatus = async (id, status) => {
     try {
@@ -48,13 +62,25 @@ export default function ProviderJobs() {
         },
         body: JSON.stringify({ status }),
       });
+
       const data = await res.json();
-      if (res.ok) {
-        setJobs((prev) => prev.map((j) => (j._id === id ? data.booking : j)));
-        if (modalJob?._id === id) setModalJob(data.booking);
+
+      if (!res.ok) {
+        throw new Error(data?.message || "Failed to update booking status");
+      }
+
+      const updatedBooking = data.booking;
+
+      setJobs((prev) =>
+        prev.map((j) => (j._id === id ? updatedBooking : j))
+      );
+
+      if (modalJob?._id === id) {
+        setModalJob(updatedBooking);
       }
     } catch (err) {
       console.error("Update status error:", err);
+      setError(err?.message || "Failed to update booking status");
     }
   };
 
@@ -67,9 +93,22 @@ export default function ProviderJobs() {
     return "text-gray-600";
   };
 
+  const paymentColor = (paymentStatus) => {
+    if (paymentStatus === "paid") return "text-green-600";
+    if (paymentStatus === "unpaid") return "text-red-600";
+    if (paymentStatus === "refunded") return "text-blue-600";
+    return "text-gray-600";
+  };
+
   return (
     <div className="w-full min-h-screen bg-gray-100 p-4 md:p-6">
       <h1 className="text-3xl font-bold text-gray-800 mb-6">Your Jobs</h1>
+
+      {error ? (
+        <div className="mb-4 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+          {error}
+        </div>
+      ) : null}
 
       {loading ? (
         <p className="text-gray-500">Loading jobs...</p>
@@ -175,6 +214,12 @@ export default function ProviderJobs() {
                       {modalJob.status}
                     </span>
                   </p>
+                  <p>
+                    <strong>Payment:</strong>{" "}
+                    <span className={`font-semibold ${paymentColor(modalJob.paymentStatus)}`}>
+                      {modalJob.paymentStatus || "unpaid"}
+                    </span>
+                  </p>
                   {modalJob.notes && (
                     <p className="mt-2 text-gray-600">
                       <strong>Notes:</strong> {modalJob.notes}
@@ -210,12 +255,14 @@ export default function ProviderJobs() {
                     </button>
                   )}
 
-                  <button
-                    onClick={() => updateStatus(modalJob._id, "cancelled")}
-                    className="rounded bg-red-500 px-4 py-2 text-white"
-                  >
-                    Cancel
-                  </button>
+                  {modalJob.status !== "completed" && modalJob.status !== "cancelled" && (
+                    <button
+                      onClick={() => updateStatus(modalJob._id, "cancelled")}
+                      className="rounded bg-red-500 px-4 py-2 text-white"
+                    >
+                      Cancel
+                    </button>
+                  )}
 
                   <button
                     onClick={() => setShowChat(true)}

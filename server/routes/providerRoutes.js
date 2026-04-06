@@ -67,22 +67,47 @@ function buildCoordinatesFromLatLng(lat, lng) {
 function normalizeProvider(provider) {
   if (!provider) return provider;
 
-  const plain = typeof provider.toObject === "function" ? provider.toObject() : provider;
+  const plain =
+    typeof provider.toObject === "function" ? provider.toObject() : provider;
 
   return {
     ...plain,
     services: Array.isArray(plain.services) ? plain.services : [],
     documents: Array.isArray(plain.documents) ? plain.documents : [],
+    resubmissions: Array.isArray(plain.resubmissions) ? plain.resubmissions : [],
     isApproved: plain.status === "approved",
     isPending: plain.status === "pending",
     isRejected: plain.status === "rejected",
     approvalBanner:
-      plain.status === "approved"
+      plain.approvalBanner ||
+      (plain.status === "approved"
         ? "Approved"
         : plain.status === "rejected"
         ? "Rejected"
-        : "Pending admin approval",
+        : "Pending admin approval"),
   };
+}
+
+function mergeAvailability(existingAvailability, incomingAvailability) {
+  return {
+    ...(typeof existingAvailability?.toObject === "function"
+      ? existingAvailability.toObject()
+      : existingAvailability || {}),
+    ...incomingAvailability,
+  };
+}
+
+async function resolveProviderLocation({ lat, lng, locationText }) {
+  const coordinates = buildCoordinatesFromLatLng(lat, lng);
+
+  if (coordinates) return coordinates;
+
+  if (locationText) {
+    const geo = await geocodeAddress(locationText);
+    if (geo) return [geo.lng, geo.lat];
+  }
+
+  return [0, 0];
 }
 
 /* -------------------------------------------------------------------------- */
@@ -141,20 +166,11 @@ router.post(
         }
       }
 
-      // Coordinates:
-      // 1) Use explicit lat/lng if sent
-      // 2) Otherwise geocode the location text
-      // 3) Fallback to [0,0]
-      let coordinates = buildCoordinatesFromLatLng(req.body.lat, req.body.lng);
-
-      if (!coordinates && basicInfo.location) {
-        const geo = await geocodeAddress(basicInfo.location);
-        if (geo) {
-          coordinates = [geo.lng, geo.lat];
-        }
-      }
-
-      if (!coordinates) coordinates = [0, 0];
+      const coordinates = await resolveProviderLocation({
+        lat: req.body.lat,
+        lng: req.body.lng,
+        locationText: basicInfo.location,
+      });
 
       let provider;
 
@@ -180,6 +196,9 @@ router.post(
             coordinates,
           },
           status: "pending",
+          approvalBanner: "Pending admin approval",
+          rejectionReason: "",
+          resubmissions: [],
           rating: 0,
           reviewCount: 0,
           availabilityStatus: "Offline",
@@ -213,12 +232,10 @@ router.post(
         }
 
         if (availabilityInput && typeof availabilityInput === "object") {
-          existingProvider.availability = {
-            ...(typeof existingProvider.availability?.toObject === "function"
-              ? existingProvider.availability.toObject()
-              : existingProvider.availability || {}),
-            ...availabilityInput,
-          };
+          existingProvider.availability = mergeAvailability(
+            existingProvider.availability,
+            availabilityInput
+          );
         }
 
         if (!existingProvider.location) {
@@ -261,6 +278,50 @@ router.post(
     }
   }
 );
+
+/* -------------------------------------------------------------------------- */
+/*                        PATCH /api/providers/resubmit                       */
+/* -------------------------------------------------------------------------- */
+router.patch("/resubmit", protect("provider"), async (req, res) => {
+  try {
+    const provider = await Provider.findOne({ user: req.user._id });
+    if (!provider) {
+      return res.status(404).json({ message: "Provider not found" });
+    }
+
+    if (provider.status !== "rejected") {
+      return res.status(400).json({
+        message: "Only rejected providers can resubmit",
+      });
+    }
+
+    const note = String(req.body?.note || "").trim();
+
+    if (!Array.isArray(provider.resubmissions)) {
+      provider.resubmissions = [];
+    }
+
+    provider.resubmissions.push({
+      note,
+      previousRejectionReason: provider.rejectionReason || "",
+      date: new Date(),
+    });
+
+    provider.status = "pending";
+    provider.approvalBanner = "Pending admin approval";
+    provider.rejectionReason = "";
+
+    await provider.save();
+
+    res.json({
+      message: "Provider resubmitted successfully",
+      provider: normalizeProvider(provider),
+    });
+  } catch (err) {
+    console.error("RESUBMIT ERROR:", err);
+    res.status(500).json({ message: err.message });
+  }
+});
 
 /* -------------------------------------------------------------------------- */
 /*                            GET ALL PROVIDERS                               */
@@ -316,6 +377,7 @@ router.put(
       // Prevent approval state changes from provider-side updates
       delete req.body.status;
       delete req.body.rejectionReason;
+      delete req.body.approvalBanner;
 
       const basicInfo = parseJsonInput(req.body.basicInfo, null);
       const servicesInput = parseJsonInput(req.body.services, []);
@@ -378,18 +440,12 @@ router.put(
 
       // Update availability if provided
       if (availabilityInput && typeof availabilityInput === "object") {
-        provider.availability = {
-          ...(typeof provider.availability?.toObject === "function"
-            ? provider.availability.toObject()
-            : provider.availability || {}),
-          ...availabilityInput,
-        };
+        provider.availability = mergeAvailability(provider.availability, availabilityInput);
       }
 
       // Update coordinates from lat/lng if sent
       const coordinates = buildCoordinatesFromLatLng(req.body.lat, req.body.lng);
 
-      // If no lat/lng were sent, geocode the location text
       if (coordinates) {
         provider.location = provider.location || { type: "Point", coordinates: [0, 0] };
         provider.location.type = "Point";

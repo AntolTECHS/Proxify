@@ -7,65 +7,116 @@ import { protect } from "../middleware/authMiddleware.js";
 
 const router = express.Router();
 
-/* -------------------- HELPER: Admin check -------------------- */
+/* -------------------- ADMIN ONLY -------------------- */
 const adminOnly = (req, res, next) => {
   if (!req.user || req.user.role !== "admin") {
-    return res.status(403).json({ success: false, message: "Access denied. Admins only." });
+    return res
+      .status(403)
+      .json({ success: false, message: "Access denied. Admins only." });
   }
   next();
 };
 
+/* -------------------- VALID STATUSES -------------------- */
+const VALID_STATUSES = [
+  "pending",
+  "accepted",
+  "in_progress",
+  "completed",
+  "cancelled",
+];
+
 /* -------------------- CREATE BOOKING -------------------- */
 router.post("/", protect(), async (req, res) => {
   try {
-    const { providerId, serviceId, scheduledAt, location, notes } = req.body;
+    const { providerId, serviceId, scheduledAt, location, notes, lat, lng } =
+      req.body;
 
-    if (!providerId || !mongoose.Types.ObjectId.isValid(providerId))
-      return res.status(400).json({ success: false, message: "Invalid providerId" });
+    if (!providerId || !mongoose.Types.ObjectId.isValid(providerId)) {
+      return res
+        .status(400)
+        .json({ success: false, message: "Invalid providerId" });
+    }
 
-    if (!serviceId) return res.status(400).json({ success: false, message: "serviceId required" });
-    if (!scheduledAt || !location)
-      return res.status(400).json({ success: false, message: "scheduledAt and location are required" });
+    if (!serviceId || !mongoose.Types.ObjectId.isValid(serviceId)) {
+      return res
+        .status(400)
+        .json({ success: false, message: "Invalid serviceId" });
+    }
+
+    if (!scheduledAt || !location) {
+      return res.status(400).json({
+        success: false,
+        message: "scheduledAt and location are required",
+      });
+    }
+
+    const scheduledDate = new Date(scheduledAt);
+    if (isNaN(scheduledDate.getTime())) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid scheduledAt date",
+      });
+    }
 
     const provider = await Provider.findById(providerId);
-    if (!provider)
-      return res.status(404).json({ success: false, message: "Provider not found" });
 
-    const service = provider.services.find((s) => s._id.toString() === serviceId);
-    if (!service)
-      return res.status(404).json({ success: false, message: "Service not found on provider" });
+    if (!provider) {
+      return res
+        .status(404)
+        .json({ success: false, message: "Provider not found" });
+    }
+
+    const service = provider.services.find(
+      (s) => s._id.toString() === serviceId
+    );
+
+    if (!service) {
+      return res
+        .status(404)
+        .json({ success: false, message: "Service not found on provider" });
+    }
 
     const conflict = await Booking.findOne({
       provider: providerId,
-      scheduledAt: new Date(scheduledAt),
+      scheduledAt: scheduledDate,
       status: { $in: ["pending", "accepted", "in_progress"] },
     });
 
-    if (conflict)
-      return res.status(400).json({ success: false, message: "Provider already has a booking at this time" });
+    if (conflict) {
+      return res.status(400).json({
+        success: false,
+        message: "Provider already has a booking at this time",
+      });
+    }
 
     const booking = await Booking.create({
       customer: req.user._id,
       provider: providerId,
       serviceId: service._id,
       serviceName: service.name,
-      scheduledAt: new Date(scheduledAt),
+      scheduledAt: scheduledDate,
       location,
       notes: notes || "",
       price: service.price || 0,
+      lat: lat ?? provider.lat ?? null,
+      lng: lng ?? provider.lng ?? null,
       status: "pending",
       paymentStatus: "unpaid",
     });
 
     const populatedBooking = await Booking.findById(booking._id)
-      .populate("provider", "basicInfo services rating reviewCount status lat lng")
+      .populate(
+        "provider",
+        "basicInfo services rating reviewCount status lat lng"
+      )
       .populate("customer", "-password")
       .lean();
 
-    res.status(201).json({ success: true, booking: populatedBooking });
+    return res.status(201).json({ success: true, booking: populatedBooking });
   } catch (err) {
     console.error("CREATE BOOKING ERROR:", err);
-    res.status(500).json({ success: false, message: err.message });
+    return res.status(500).json({ success: false, message: err.message });
   }
 });
 
@@ -73,13 +124,17 @@ router.post("/", protect(), async (req, res) => {
 router.get("/", protect(), async (req, res) => {
   try {
     const bookings = await Booking.find({ customer: req.user._id })
-      .populate("provider", "basicInfo services rating reviewCount status lat lng")
+      .populate(
+        "provider",
+        "basicInfo services rating reviewCount status lat lng"
+      )
       .populate("customer", "-password")
       .lean();
-    res.json({ success: true, bookings });
+
+    return res.json({ success: true, bookings });
   } catch (err) {
     console.error("GET BOOKINGS ERROR:", err);
-    res.status(500).json({ success: false, message: err.message });
+    return res.status(500).json({ success: false, message: err.message });
   }
 });
 
@@ -87,116 +142,127 @@ router.get("/", protect(), async (req, res) => {
 router.get("/provider", protect(), async (req, res) => {
   try {
     const provider = await Provider.findOne({ user: req.user._id });
-    if (!provider) return res.status(404).json({ success: false, message: "Provider profile not found" });
+
+    if (!provider) {
+      return res.status(404).json({
+        success: false,
+        message: "Provider profile not found",
+      });
+    }
 
     const bookings = await Booking.find({ provider: provider._id })
       .populate("customer", "-password")
       .populate("provider", "basicInfo")
       .lean();
 
-    res.json({ success: true, bookings });
+    return res.json({ success: true, bookings });
   } catch (err) {
     console.error("GET PROVIDER BOOKINGS ERROR:", err);
-    res.status(500).json({ success: false, message: err.message });
-  }
-});
-
-/* -------------------- GET BOOKINGS BY PROVIDER ID -------------------- */
-router.get("/provider/:providerId", protect(), async (req, res) => {
-  try {
-    const { providerId } = req.params;
-    if (!mongoose.Types.ObjectId.isValid(providerId))
-      return res.status(400).json({ success: false, message: "Invalid providerId" });
-
-    const bookings = await Booking.find({ provider: providerId })
-      .populate("customer", "-password")
-      .lean();
-
-    res.json({ success: true, bookings });
-  } catch (err) {
-    console.error("GET PROVIDER BOOKINGS ERROR:", err);
-    res.status(500).json({ success: false, message: err.message });
+    return res.status(500).json({ success: false, message: err.message });
   }
 });
 
 /* -------------------- UPDATE BOOKING STATUS -------------------- */
 router.patch("/:id/status", protect(), async (req, res) => {
   try {
+    const { id } = req.params;
     const { status } = req.body;
-    if (!status) return res.status(400).json({ success: false, message: "Status is required" });
 
-    const booking = await Booking.findById(req.params.id);
-    if (!booking) return res.status(404).json({ success: false, message: "Booking not found" });
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      return res
+        .status(400)
+        .json({ success: false, message: "Invalid booking id" });
+    }
+
+    if (!status) {
+      return res
+        .status(400)
+        .json({ success: false, message: "Status is required" });
+    }
+
+    if (!VALID_STATUSES.includes(status)) {
+      return res.status(400).json({
+        success: false,
+        message: `Invalid status. Allowed values: ${VALID_STATUSES.join(", ")}`,
+      });
+    }
+
+    const booking = await Booking.findById(id);
+
+    if (!booking) {
+      return res
+        .status(404)
+        .json({ success: false, message: "Booking not found" });
+    }
 
     booking.status = status;
+
+    // ✅ AUTO SET PAYMENT STATUS
+    if (status === "completed") {
+      booking.paymentStatus = "paid";
+    }
+
     await booking.save();
 
-    res.json({ success: true, booking });
+    const updatedBooking = await Booking.findById(id)
+      .populate("customer", "-password")
+      .populate(
+        "provider",
+        "basicInfo services rating reviewCount status lat lng"
+      )
+      .lean();
+
+    return res.json({
+      success: true,
+      booking: updatedBooking,
+    });
   } catch (err) {
     console.error("UPDATE STATUS ERROR:", err);
-    res.status(500).json({ success: false, message: err.message });
+    return res.status(500).json({ success: false, message: err.message });
   }
 });
 
-/* -------------------- RESCHEDULE BOOKING -------------------- */
-router.patch("/:id/reschedule", protect(), async (req, res) => {
-  try {
-    const { scheduledAt } = req.body;
-    if (!scheduledAt) return res.status(400).json({ success: false, message: "scheduledAt is required" });
-
-    const booking = await Booking.findById(req.params.id);
-    if (!booking) return res.status(404).json({ success: false, message: "Booking not found" });
-
-    const newDate = new Date(scheduledAt);
-
-    const conflict = await Booking.findOne({
-      provider: booking.provider,
-      scheduledAt: newDate,
-      status: { $in: ["pending", "accepted", "in_progress"] },
-      _id: { $ne: booking._id },
-    });
-
-    if (conflict)
-      return res.status(400).json({ success: false, message: "Provider already has a booking at this time" });
-
-    booking.scheduledAt = newDate;
-    await booking.save();
-
-    res.json({ success: true, booking });
-  } catch (err) {
-    console.error("RESCHEDULE BOOKING ERROR:", err);
-    res.status(500).json({ success: false, message: err.message });
-  }
-});
-
-/* -------------------- ADMIN: GET ALL BOOKINGS -------------------- */
-router.get("/admin/all", protect(), adminOnly, async (req, res) => {
+/* -------------------- ADMIN GET ALL BOOKINGS -------------------- */
+router.get("/admin/all", protect("admin"), adminOnly, async (req, res) => {
   try {
     const bookings = await Booking.find()
       .populate("customer", "-password")
       .populate("provider", "basicInfo")
-      .populate("serviceId", "name description price")
       .sort({ createdAt: -1 })
       .lean();
 
-    res.json({ success: true, bookings });
+    return res.json({ success: true, bookings });
   } catch (err) {
     console.error("ADMIN GET BOOKINGS ERROR:", err);
-    res.status(500).json({ success: false, message: err.message });
+    return res.status(500).json({ success: false, message: err.message });
   }
 });
 
-/* -------------------- ADMIN: DELETE BOOKING -------------------- */
-router.delete("/admin/:id", protect(), adminOnly, async (req, res) => {
+/* -------------------- ADMIN DELETE BOOKING -------------------- */
+router.delete("/admin/:id", protect("admin"), adminOnly, async (req, res) => {
   try {
-    const booking = await Booking.findById(req.params.id);
-    if (!booking) return res.status(404).json({ success: false, message: "Booking not found" });
+    const { id } = req.params;
+
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      return res
+        .status(400)
+        .json({ success: false, message: "Invalid booking id" });
+    }
+
+    const booking = await Booking.findById(id);
+
+    if (!booking) {
+      return res
+        .status(404)
+        .json({ success: false, message: "Booking not found" });
+    }
 
     await booking.deleteOne();
-    res.json({ success: true, message: "Booking deleted" });
+
+    return res.json({ success: true, message: "Booking deleted" });
   } catch (err) {
     console.error("ADMIN DELETE BOOKING ERROR:", err);
-    res.status(500).json({ success: false, message: err.message });
+    return res.status(500).json({ success: false, message: err.message });
   }
 });
 

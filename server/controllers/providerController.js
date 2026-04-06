@@ -30,10 +30,11 @@ const normalizeProviderResponse = (provider) => {
     ...plain,
     services: Array.isArray(plain.services) ? plain.services : [],
     documents: Array.isArray(plain.documents) ? plain.documents : [],
+    resubmissions: Array.isArray(plain.resubmissions) ? plain.resubmissions : [],
     isApproved: plain.status === "approved",
     isPending: plain.status === "pending",
     isRejected: plain.status === "rejected",
-    approvalBanner: formatProviderStatus(plain.status),
+    approvalBanner: plain.approvalBanner || formatProviderStatus(plain.status),
   };
 };
 
@@ -147,6 +148,9 @@ export const upgradeToProvider = asyncHandler(async (req, res) => {
     documents,
     availability: availability || {},
     status: "pending",
+    approvalBanner: "Pending admin approval",
+    rejectionReason: "",
+    resubmissions: [],
     availabilityStatus: "Offline",
     rating: 0,
     reviewCount: 0,
@@ -209,6 +213,7 @@ export const updateProvider = asyncHandler(async (req, res) => {
   // Block any attempt to change approval fields from this route
   delete req.body.status;
   delete req.body.rejectionReason;
+  delete req.body.approvalBanner;
 
   provider.basicInfo = {
     ...provider.basicInfo,
@@ -313,6 +318,48 @@ export const updateProvider = asyncHandler(async (req, res) => {
 });
 
 /**
+ * @desc    Resubmit rejected provider for review
+ * @route   PATCH /api/providers/resubmit
+ * @access  Private
+ */
+export const resubmitProvider = asyncHandler(async (req, res) => {
+  const provider = await Provider.findOne({ user: req.user._id });
+
+  if (!provider) {
+    return res.status(404).json({ message: "Provider not found" });
+  }
+
+  if (provider.status !== "rejected") {
+    return res.status(400).json({
+      message: "Only rejected providers can resubmit",
+    });
+  }
+
+  const note = String(req.body.note || "").trim();
+
+  if (!provider.resubmissions) {
+    provider.resubmissions = [];
+  }
+
+  provider.resubmissions.push({
+    note,
+    previousRejectionReason: provider.rejectionReason || "",
+    date: new Date(),
+  });
+
+  provider.status = "pending";
+  provider.approvalBanner = "Pending admin approval";
+  provider.rejectionReason = "";
+
+  await provider.save();
+
+  res.json({
+    message: "Provider resubmitted successfully",
+    provider: normalizeProviderResponse(provider),
+  });
+});
+
+/**
  * @desc    Get all providers
  * @route   GET /api/providers
  * @access  Public
@@ -327,10 +374,11 @@ export const getAllProviders = asyncHandler(async (req, res) => {
     ...p,
     services: Array.isArray(p.services) ? p.services : [],
     documents: Array.isArray(p.documents) ? p.documents : [],
+    resubmissions: Array.isArray(p.resubmissions) ? p.resubmissions : [],
     isApproved: p.status === "approved",
     isPending: p.status === "pending",
     isRejected: p.status === "rejected",
-    approvalBanner: formatProviderStatus(p.status),
+    approvalBanner: p.approvalBanner || formatProviderStatus(p.status),
   }));
 
   res.json(result);

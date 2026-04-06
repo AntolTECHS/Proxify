@@ -6,16 +6,15 @@ import Provider from "../models/Provider.js";
    ADD BOOKING (CUSTOMER)
 ================================ */
 export const addBooking = asyncHandler(async (req, res) => {
-  const { serviceId, providerId, scheduledAt, notes, lat, lng } = req.body;
+  const { serviceId, providerId, scheduledAt, notes, lat, lng, location } = req.body;
 
-  if (!serviceId || !providerId || !scheduledAt) {
+  if (!serviceId || !providerId || !scheduledAt || !location) {
     return res.status(400).json({
       success: false,
-      message: "Missing required fields: serviceId, providerId, scheduledAt",
+      message: "Missing required fields: serviceId, providerId, scheduledAt, location",
     });
   }
 
-  // Validate date
   const scheduledDate = new Date(scheduledAt);
   if (isNaN(scheduledDate.getTime())) {
     return res.status(400).json({
@@ -24,7 +23,6 @@ export const addBooking = asyncHandler(async (req, res) => {
     });
   }
 
-  // Fetch provider
   const provider = await Provider.findById(providerId);
   if (!provider) {
     return res.status(404).json({
@@ -33,10 +31,7 @@ export const addBooking = asyncHandler(async (req, res) => {
     });
   }
 
-  // Find service inside provider
-  const service = provider.services.find(
-    (s) => s._id.toString() === serviceId
-  );
+  const service = provider.services.find((s) => s._id.toString() === serviceId);
 
   if (!service) {
     return res.status(400).json({
@@ -45,7 +40,6 @@ export const addBooking = asyncHandler(async (req, res) => {
     });
   }
 
-  // Prevent double booking
   const conflict = await Booking.findOne({
     provider: providerId,
     scheduledAt: scheduledDate,
@@ -59,14 +53,13 @@ export const addBooking = asyncHandler(async (req, res) => {
     });
   }
 
-  // Create booking
   const booking = await Booking.create({
     customer: req.user._id,
     provider: providerId,
     serviceId: service._id,
     serviceName: service.name,
     scheduledAt: scheduledDate,
-    location: req.body.location || "",
+    location,
     notes: notes || "",
     price: service.price || 0,
     lat: lat ?? provider.lat ?? null,
@@ -77,6 +70,42 @@ export const addBooking = asyncHandler(async (req, res) => {
 
   return res.status(201).json({
     success: true,
+    booking,
+  });
+});
+
+/* ================================
+   UPDATE BOOKING STATUS
+   - if completed => paymentStatus = paid
+================================ */
+export const updateBookingStatus = asyncHandler(async (req, res) => {
+  const { id } = req.params;
+  const { status, paymentStatus } = req.body;
+
+  const booking = await Booking.findById(id);
+
+  if (!booking) {
+    return res.status(404).json({
+      success: false,
+      message: "Booking not found",
+    });
+  }
+
+  if (status) {
+    booking.status = status;
+  }
+
+  if (status === "completed") {
+    booking.paymentStatus = "paid";
+  } else if (paymentStatus) {
+    booking.paymentStatus = paymentStatus;
+  }
+
+  await booking.save();
+
+  return res.status(200).json({
+    success: true,
+    message: "Booking updated successfully",
     booking,
   });
 });

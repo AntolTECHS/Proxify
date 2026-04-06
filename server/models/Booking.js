@@ -2,109 +2,92 @@ const mongoose = require("mongoose");
 
 const bookingSchema = new mongoose.Schema(
   {
-    /* ================= CUSTOMER ================= */
-
     customer: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "User",
       required: true,
-      index: true
+      index: true,
     },
-
-    /* ================= PROVIDER ================= */
 
     provider: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "Provider",
       required: true,
-      index: true
+      index: true,
     },
-
-    /* ================= SERVICE ================= */
 
     serviceId: {
       type: mongoose.Schema.Types.ObjectId,
-      required: true
+      required: true,
     },
 
     serviceName: {
       type: String,
-      required: true
+      required: true,
     },
-
-    /* ================= STATUS ================= */
 
     status: {
       type: String,
-      enum: [
-        "pending",
-        "accepted",
-        "in_progress",
-        "completed",
-        "cancelled"
-      ],
-      default: "pending"
+      enum: ["pending", "accepted", "in_progress", "completed", "cancelled"],
+      default: "pending",
     },
-
-    /* ================= SCHEDULE ================= */
 
     scheduledAt: {
       type: Date,
       required: true,
-      index: true
+      index: true,
     },
-
-    /* ================= LOCATION ================= */
 
     location: {
       type: String,
       required: true,
-      trim: true
+      trim: true,
     },
 
     lat: Number,
     lng: Number,
 
-    /* ================= NOTES ================= */
-
     notes: {
       type: String,
-      trim: true
+      trim: true,
     },
-
-    /* ================= PAYMENT ================= */
 
     price: {
       type: Number,
       required: true,
-      min: 0
+      min: 0,
     },
 
     paymentStatus: {
       type: String,
       enum: ["unpaid", "paid", "refunded"],
-      default: "unpaid"
+      default: "unpaid",
     },
 
     paymentMethod: {
       type: String,
-      enum: ["cash", "card", "mobile_money"]
+      enum: ["cash", "card", "mobile_money"],
     },
-
-    /* ================= FEEDBACK ================= */
 
     rating: {
       type: Number,
       min: 1,
-      max: 5
+      max: 5,
     },
 
     feedback: {
       type: String,
-      trim: true
-    }
+      trim: true,
+    },
   },
   { timestamps: true }
 );
+
+/* ✅ AUTO PAYMENT UPDATE (NO next()) */
+bookingSchema.pre("save", function () {
+  if (this.isModified("status") && this.status === "completed") {
+    this.paymentStatus = "paid";
+  }
+});
 
 module.exports = mongoose.model("Booking", bookingSchema);

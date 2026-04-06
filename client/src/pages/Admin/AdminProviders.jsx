@@ -1,3 +1,4 @@
+// src/pages/admin/AdminProvidersPage.jsx
 import { useEffect, useMemo, useState } from "react";
 import { Card, CardContent } from "../../components/ui/card";
 import { Button } from "../../components/ui/button";
@@ -14,7 +15,9 @@ function resolveFileUrl(filePath) {
   if (!filePath) return "";
   if (/^https?:\/\//i.test(filePath)) return filePath;
   if (filePath.startsWith("//")) return `https:${filePath}`;
-  return `${API_BASE_URL.replace(/\/$/, "")}${filePath.startsWith("/") ? "" : "/"}${filePath}`;
+  return `${API_BASE_URL.replace(/\/$/, "")}${
+    filePath.startsWith("/") ? "" : "/"
+  }${filePath}`;
 }
 
 function formatKshPrice(value) {
@@ -30,6 +33,13 @@ function formatKshPrice(value) {
   }
 
   return `KSh ${new Intl.NumberFormat("en-KE").format(numericValue)}`;
+}
+
+function formatDateTime(value) {
+  if (!value) return "-";
+  const d = new Date(value);
+  if (Number.isNaN(d.getTime())) return "-";
+  return d.toLocaleString();
 }
 
 function getStatusMeta(status, approvalBanner, rejectionReason) {
@@ -101,8 +111,25 @@ function SectionTitle({ children }) {
   return <h3 className="text-lg font-semibold text-gray-900">{children}</h3>;
 }
 
+function TabButton({ active, children, onClick }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={`rounded-xl border px-4 py-2 text-sm font-medium transition ${
+        active
+          ? "border-sky-200 bg-sky-50 text-sky-700"
+          : "border-gray-200 bg-white text-gray-600 hover:bg-gray-50"
+      }`}
+    >
+      {children}
+    </button>
+  );
+}
+
 export default function AdminProvidersPage() {
   const { token, user } = useAuth();
+
   const [providers, setProviders] = useState([]);
   const [search, setSearch] = useState("");
   const [loading, setLoading] = useState(true);
@@ -113,6 +140,8 @@ export default function AdminProvidersPage() {
   const [activeTab, setActiveTab] = useState("services");
   const [previewUrl, setPreviewUrl] = useState("");
   const [previewDoc, setPreviewDoc] = useState(null);
+  const [rejectOpen, setRejectOpen] = useState(false);
+  const [rejectReason, setRejectReason] = useState("");
 
   const loadProviders = async () => {
     if (!token || user?.role !== "admin") return;
@@ -133,6 +162,7 @@ export default function AdminProvidersPage() {
 
   useEffect(() => {
     loadProviders();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [token, user?.role]);
 
   const filteredProviders = useMemo(() => {
@@ -140,18 +170,26 @@ export default function AdminProvidersPage() {
     if (!q) return providers;
 
     return providers.filter((p) => {
-      const nameMatch = (p.basicInfo?.providerName || p.name || "").toLowerCase().includes(q);
-      const emailMatch = (p.basicInfo?.email || p.email || "").toLowerCase().includes(q);
-      const businessMatch = (p.basicInfo?.businessName || "").toLowerCase().includes(q);
-      const categoryMatch = (p.category || "").toLowerCase().includes(q);
-      const statusMatch = String(p.status || "").toLowerCase().includes(q);
+      const providerName = p.basicInfo?.providerName || p.name || "";
+      const email = p.basicInfo?.email || p.email || "";
+      const business = p.basicInfo?.businessName || "";
+      const category = p.category || "";
+      const status = String(p.status || "");
+
+      const nameMatch = providerName.toLowerCase().includes(q);
+      const emailMatch = email.toLowerCase().includes(q);
+      const businessMatch = business.toLowerCase().includes(q);
+      const categoryMatch = category.toLowerCase().includes(q);
+      const statusMatch = status.toLowerCase().includes(q);
 
       const serviceMatch = (p.services || []).some((s) =>
-        String(s.name || s.title || "").toLowerCase().includes(q)
+        String(s?.name || s?.title || "").toLowerCase().includes(q)
       );
 
       const documentMatch = (p.documents || []).some((d) =>
-        [d?.name, d?.type, d?.path].filter(Boolean).some((v) => String(v).toLowerCase().includes(q))
+        [d?.name, d?.type, d?.path]
+          .filter(Boolean)
+          .some((v) => String(v).toLowerCase().includes(q))
       );
 
       return (
@@ -166,6 +204,12 @@ export default function AdminProvidersPage() {
     });
   }, [providers, search]);
 
+  const refreshSelectedProvider = async (id) => {
+    if (!id) return;
+    const fullProvider = await adminService.getProviderById(id, token);
+    setSelectedProvider(fullProvider?.provider || fullProvider);
+  };
+
   const handleApprove = async (id) => {
     try {
       setActionLoading(id);
@@ -173,27 +217,28 @@ export default function AdminProvidersPage() {
       await loadProviders();
 
       if (selectedProvider?._id === id) {
-        const fullProvider = await adminService.getProviderById(id, token);
-        setSelectedProvider(fullProvider?.provider || fullProvider);
+        await refreshSelectedProvider(id);
       }
+    } catch (err) {
+      setError(err?.message || "Failed to approve provider");
     } finally {
       setActionLoading("");
     }
   };
 
-  const handleReject = async (id) => {
-    const note = window.prompt("Enter rejection reason");
-    if (!note?.trim()) return;
+  const handleReject = async () => {
+    const reason = rejectReason.trim();
+    if (!selectedProvider?._id || !reason) return;
 
     try {
-      setActionLoading(id);
-      await adminService.rejectProvider(id, note.trim(), token);
+      setActionLoading(selectedProvider._id);
+      await adminService.rejectProvider(selectedProvider._id, reason, token);
+      setRejectOpen(false);
+      setRejectReason("");
       await loadProviders();
-
-      if (selectedProvider?._id === id) {
-        const fullProvider = await adminService.getProviderById(id, token);
-        setSelectedProvider(fullProvider?.provider || fullProvider);
-      }
+      await refreshSelectedProvider(selectedProvider._id);
+    } catch (err) {
+      setError(err?.message || "Failed to reject provider");
     } finally {
       setActionLoading("");
     }
@@ -221,6 +266,8 @@ export default function AdminProvidersPage() {
     setSelectedProvider(null);
     setActiveTab("services");
     setDetailLoading(false);
+    setRejectOpen(false);
+    setRejectReason("");
   };
 
   const handleOpenDocument = (url) => {
@@ -257,7 +304,7 @@ export default function AdminProvidersPage() {
     <div className="space-y-6">
       <div className="rounded-3xl bg-white p-6 shadow-sm">
         <h1 className="text-3xl font-bold text-gray-900">Providers & Services</h1>
-        <p className="mt-1 text-gray-600">Review providers, services, and uploaded documents.</p>
+        <p className="mt-1 text-gray-600">Review providers, services, documents, and resubmissions.</p>
         {error && <p className="mt-3 rounded-xl bg-red-50 px-4 py-3 text-sm text-red-700">{error}</p>}
       </div>
 
@@ -363,7 +410,11 @@ export default function AdminProvidersPage() {
                           </Button>
                           <Button
                             variant="destructive"
-                            onClick={() => handleReject(p._id)}
+                            onClick={() => {
+                              setSelectedProvider(p);
+                              setRejectReason("");
+                              setRejectOpen(true);
+                            }}
                             disabled={actionLoading === p._id}
                           >
                             Reject
@@ -465,7 +516,25 @@ export default function AdminProvidersPage() {
                 Loading provider details...
               </div>
             ) : (
-              <div className="mt-6 space-y-8">
+              <div className="mt-6 space-y-6">
+                <div className="flex flex-wrap gap-2 border-b pb-4">
+                  <TabButton active={activeTab === "services"} onClick={() => setActiveTab("services")}>
+                    Services
+                  </TabButton>
+                  <TabButton active={activeTab === "documents"} onClick={() => setActiveTab("documents")}>
+                    Documents
+                  </TabButton>
+                  <TabButton active={activeTab === "availability"} onClick={() => setActiveTab("availability")}>
+                    Availability
+                  </TabButton>
+                  <TabButton active={activeTab === "metadata"} onClick={() => setActiveTab("metadata")}>
+                    Metadata
+                  </TabButton>
+                  <TabButton active={activeTab === "history"} onClick={() => setActiveTab("history")}>
+                    Resubmissions
+                  </TabButton>
+                </div>
+
                 <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
                   <DetailRow label="Provider Name" value={selectedProvider.basicInfo?.providerName} />
                   <DetailRow label="Email" value={selectedProvider.basicInfo?.email} />
@@ -513,109 +582,148 @@ export default function AdminProvidersPage() {
                   />
                 </div>
 
+                {activeTab === "services" && (
+                  <div className="rounded-2xl border bg-gray-50 p-4">
+                    <div className="flex items-center justify-between gap-3">
+                      <SectionTitle>Services</SectionTitle>
+                      <span className="text-sm text-gray-500">
+                        {selectedProvider.services?.length || 0} service(s)
+                      </span>
+                    </div>
+
+                    <div className="mt-4 space-y-3">
+                      {(selectedProvider.services?.length || 0) === 0 ? (
+                        <p className="text-sm text-gray-500">No services found</p>
+                      ) : (
+                        selectedProvider.services.map((s, idx) => (
+                          <div key={s._id || s.id || idx} className="rounded-2xl border bg-white p-4">
+                            <div className="flex items-start justify-between gap-4">
+                              <div>
+                                <p className="font-medium text-gray-900">
+                                  {s.name || s.title || "Unnamed service"}
+                                </p>
+                                <p className="text-sm text-gray-500">
+                                  {s.description || "No description"}
+                                </p>
+                              </div>
+                              <div className="text-sm font-semibold text-gray-900">
+                                {formatKshPrice(s.price ?? s.cost)}
+                              </div>
+                            </div>
+                          </div>
+                        ))
+                      )}
+                    </div>
+                  </div>
+                )}
+
+                {activeTab === "documents" && (
+                  <div className="rounded-2xl border bg-gray-50 p-4">
+                    <div className="flex items-center justify-between gap-3">
+                      <SectionTitle>Documents</SectionTitle>
+                      <span className="text-sm text-gray-500">
+                        {selectedProvider.documents?.length || 0} document(s)
+                      </span>
+                    </div>
+
+                    <div className="mt-4 space-y-3">
+                      {(selectedProvider.documents?.length || 0) === 0 ? (
+                        <p className="text-sm text-gray-500">No documents found</p>
+                      ) : (
+                        selectedProvider.documents.map((doc, idx) => (
+                          <DocumentCard
+                            key={doc._id || doc.id || idx}
+                            doc={doc}
+                            onClickOpen={handleOpenDocument}
+                            onPreview={handlePreviewDocument}
+                          />
+                        ))
+                      )}
+                    </div>
+                  </div>
+                )}
+
+                {activeTab === "availability" && (
+                  <div className="rounded-2xl border bg-gray-50 p-4">
+                    <SectionTitle>Availability</SectionTitle>
+                    <div className="mt-4 grid gap-4 sm:grid-cols-3">
+                      <DetailRow
+                        label="Days"
+                        value={
+                          Array.isArray(selectedProvider.availability?.days) &&
+                          selectedProvider.availability.days.length > 0
+                            ? selectedProvider.availability.days.join(", ")
+                            : "Not set"
+                        }
+                      />
+                      <DetailRow
+                        label="Start"
+                        value={selectedProvider.availability?.start || "Not set"}
+                      />
+                      <DetailRow
+                        label="End"
+                        value={selectedProvider.availability?.end || "Not set"}
+                      />
+                    </div>
+                  </div>
+                )}
+
+                {activeTab === "metadata" && (
+                  <div className="rounded-2xl border bg-gray-50 p-4">
+                    <SectionTitle>Account / Metadata</SectionTitle>
+                    <div className="mt-4 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+                      <DetailRow label="Role" value={selectedProvider.user?.role || "-"} />
+                      <DetailRow label="User Name" value={selectedProvider.user?.name || "-"} />
+                      <DetailRow label="User Email" value={selectedProvider.user?.email || "-"} />
+                      <DetailRow
+                        label="Created"
+                        value={formatDateTime(selectedProvider.createdAt)}
+                      />
+                    </div>
+                  </div>
+                )}
+
+                {activeTab === "history" && (
+                  <div className="rounded-2xl border bg-gray-50 p-4">
+                    <div className="flex items-center justify-between gap-3">
+                      <SectionTitle>Resubmissions</SectionTitle>
+                      <span className="text-sm text-gray-500">
+                        {selectedProvider.resubmissions?.length || 0} item(s)
+                      </span>
+                    </div>
+
+                    <div className="mt-4 space-y-3">
+                      {(selectedProvider.resubmissions?.length || 0) === 0 ? (
+                        <p className="text-sm text-gray-500">No resubmission history yet.</p>
+                      ) : (
+                        selectedProvider.resubmissions.map((item, idx) => (
+                          <div key={idx} className="rounded-2xl border bg-white p-4">
+                            <p className="text-sm font-semibold text-gray-900">
+                              Resubmission #{selectedProvider.resubmissions.length - idx}
+                            </p>
+                            <p className="mt-1 text-sm text-gray-600">
+                              <strong>Date:</strong> {formatDateTime(item?.date)}
+                            </p>
+                            <p className="mt-1 text-sm text-gray-600">
+                              <strong>Note:</strong> {item?.note || "-"}
+                            </p>
+                            <p className="mt-1 text-sm text-gray-600">
+                              <strong>Previous rejection reason:</strong>{" "}
+                              {item?.previousRejectionReason || "-"}
+                            </p>
+                          </div>
+                        ))
+                      )}
+                    </div>
+                  </div>
+                )}
+
                 {selectedProvider.bio ? (
                   <div className="rounded-2xl border bg-gray-50 p-4">
                     <SectionTitle>Bio</SectionTitle>
                     <p className="mt-2 text-sm text-gray-700">{selectedProvider.bio}</p>
                   </div>
                 ) : null}
-
-                <div className="rounded-2xl border bg-gray-50 p-4">
-                  <div className="flex items-center justify-between gap-3">
-                    <SectionTitle>Services</SectionTitle>
-                    <span className="text-sm text-gray-500">
-                      {selectedProvider.services?.length || 0} service(s)
-                    </span>
-                  </div>
-
-                  <div className="mt-4 space-y-3">
-                    {(selectedProvider.services?.length || 0) === 0 ? (
-                      <p className="text-sm text-gray-500">No services found</p>
-                    ) : (
-                      selectedProvider.services.map((s, idx) => (
-                        <div key={s._id || s.id || idx} className="rounded-2xl border bg-white p-4">
-                          <div className="flex items-start justify-between gap-4">
-                            <div>
-                              <p className="font-medium text-gray-900">
-                                {s.name || s.title || "Unnamed service"}
-                              </p>
-                              <p className="text-sm text-gray-500">
-                                {s.description || "No description"}
-                              </p>
-                            </div>
-                            <div className="text-sm font-semibold text-gray-900">
-                              {formatKshPrice(s.price ?? s.cost)}
-                            </div>
-                          </div>
-                        </div>
-                      ))
-                    )}
-                  </div>
-                </div>
-
-                <div className="rounded-2xl border bg-gray-50 p-4">
-                  <div className="flex items-center justify-between gap-3">
-                    <SectionTitle>Documents</SectionTitle>
-                    <span className="text-sm text-gray-500">
-                      {selectedProvider.documents?.length || 0} document(s)
-                    </span>
-                  </div>
-
-                  <div className="mt-4 space-y-3">
-                    {(selectedProvider.documents?.length || 0) === 0 ? (
-                      <p className="text-sm text-gray-500">No documents found</p>
-                    ) : (
-                      selectedProvider.documents.map((doc, idx) => (
-                        <DocumentCard
-                          key={doc._id || doc.id || idx}
-                          doc={doc}
-                          onClickOpen={handleOpenDocument}
-                          onPreview={handlePreviewDocument}
-                        />
-                      ))
-                    )}
-                  </div>
-                </div>
-
-                <div className="rounded-2xl border bg-gray-50 p-4">
-                  <SectionTitle>Availability</SectionTitle>
-                  <div className="mt-4 grid gap-4 sm:grid-cols-3">
-                    <DetailRow
-                      label="Days"
-                      value={
-                        Array.isArray(selectedProvider.availability?.days) &&
-                        selectedProvider.availability.days.length > 0
-                          ? selectedProvider.availability.days.join(", ")
-                          : "Not set"
-                      }
-                    />
-                    <DetailRow
-                      label="Start"
-                      value={selectedProvider.availability?.start || "Not set"}
-                    />
-                    <DetailRow
-                      label="End"
-                      value={selectedProvider.availability?.end || "Not set"}
-                    />
-                  </div>
-                </div>
-
-                <div className="rounded-2xl border bg-gray-50 p-4">
-                  <SectionTitle>Account / Metadata</SectionTitle>
-                  <div className="mt-4 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-                    <DetailRow label="Role" value={selectedProvider.user?.role || "-"} />
-                    <DetailRow label="User Name" value={selectedProvider.user?.name || "-"} />
-                    <DetailRow label="User Email" value={selectedProvider.user?.email || "-"} />
-                    <DetailRow
-                      label="Created"
-                      value={
-                        selectedProvider.createdAt
-                          ? new Date(selectedProvider.createdAt).toLocaleString()
-                          : "-"
-                      }
-                    />
-                  </div>
-                </div>
 
                 <div className="flex flex-col gap-3 border-t pt-4 sm:flex-row sm:justify-end">
                   <Button onClick={closeProvider} variant="outline">
@@ -632,7 +740,10 @@ export default function AdminProvidersPage() {
                       </Button>
                       <Button
                         variant="destructive"
-                        onClick={() => handleReject(selectedProvider._id)}
+                        onClick={() => {
+                          setRejectReason("");
+                          setRejectOpen(true);
+                        }}
                         disabled={actionLoading === selectedProvider._id}
                       >
                         Reject Provider
@@ -646,9 +757,64 @@ export default function AdminProvidersPage() {
         </div>
       )}
 
-      {previewUrl && (
+      {rejectOpen && selectedProvider && (
         <div
           className="fixed inset-0 z-[60] flex items-center justify-center bg-black/60 px-4 py-6"
+          onClick={() => {
+            setRejectOpen(false);
+            setRejectReason("");
+          }}
+        >
+          <div
+            className="w-full max-w-2xl rounded-3xl bg-white p-6 shadow-2xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h3 className="text-xl font-semibold text-gray-900">Reject Provider</h3>
+            <p className="mt-1 text-sm text-gray-500">
+              Add a clear reason so the provider knows what to fix before resubmitting.
+            </p>
+
+            <div className="mt-5">
+              <label className="mb-2 block text-sm font-medium text-gray-700">
+                Rejection reason
+              </label>
+              <textarea
+                value={rejectReason}
+                onChange={(e) => setRejectReason(e.target.value)}
+                rows={5}
+                className="w-full rounded-2xl border border-gray-300 p-3 outline-none focus:border-sky-500"
+                placeholder="Example: Please upload a clearer business registration document and correct your phone number."
+              />
+            </div>
+
+            <div className="mt-6 flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">
+              <button
+                type="button"
+                className="rounded-xl border px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50"
+                onClick={() => {
+                  setRejectOpen(false);
+                  setRejectReason("");
+                }}
+                disabled={actionLoading === selectedProvider._id}
+              >
+                Cancel
+              </button>
+
+              <Button
+                variant="destructive"
+                onClick={handleReject}
+                disabled={!rejectReason.trim() || actionLoading === selectedProvider._id}
+              >
+                {actionLoading === selectedProvider._id ? "Rejecting..." : "Reject Provider"}
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {previewUrl && (
+        <div
+          className="fixed inset-0 z-[70] flex items-center justify-center bg-black/60 px-4 py-6"
           onClick={closePreview}
         >
           <div
