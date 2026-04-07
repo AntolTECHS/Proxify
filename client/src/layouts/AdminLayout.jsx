@@ -6,6 +6,7 @@ import {
   BriefcaseBusiness,
   CalendarCheck2,
   UserCircle2,
+  Users,
   LogOut,
   X,
 } from "lucide-react";
@@ -15,6 +16,7 @@ import { useAuth } from "../context/AuthContext";
 
 const navItems = [
   { to: "/admin/dashboard", label: "Dashboard", icon: LayoutDashboard },
+  { to: "/admin/users", label: "Users", icon: Users },
   { to: "/admin/providers", label: "Providers & Services", icon: BriefcaseBusiness },
   { to: "/admin/bookings", label: "Bookings", icon: CalendarCheck2 },
   { to: "/admin/profile", label: "Profile", icon: UserCircle2 },
@@ -25,9 +27,7 @@ function Sidebar({ onNavigate }) {
     <div className="flex h-full flex-col bg-white">
       <div className="border-b p-4">
         <div className="rounded-2xl bg-gray-900 p-4 text-white shadow-sm">
-          <p className="text-xs uppercase tracking-[0.2em] text-gray-300">
-            Admin area
-          </p>
+          <p className="text-xs uppercase tracking-[0.2em] text-gray-300">Admin area</p>
           <h1 className="mt-1 text-xl font-bold">Proxify</h1>
           <p className="mt-1 text-sm text-gray-300">Manage the platform</p>
         </div>
@@ -83,37 +83,23 @@ export default function AdminLayout() {
         <header className="sticky top-0 z-40 border-b bg-white px-4 py-3 lg:px-6">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-3">
-              
-              {/* ✅ MOBILE MENU (FIXED) */}
               <div className="lg:hidden">
                 <Sheet open={mobileOpen} onOpenChange={setMobileOpen}>
-                  
-                  {/* ❌ removed asChild */}
-                  <SheetTrigger>
-                    <Button
-                      variant="outline"
-                      size="icon"
-                      aria-label="Open menu"
-                    >
+                  <SheetTrigger asChild>
+                    <Button variant="outline" size="icon" aria-label="Open menu">
                       <Menu className="h-5 w-5" />
                     </Button>
                   </SheetTrigger>
 
                   <SheetContent side="left" className="p-0">
                     <div className="flex h-full flex-col">
-                      {/* Header */}
                       <div className="flex items-center justify-between border-b px-4 py-3">
                         <p className="font-semibold">Menu</p>
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          onClick={closeMobileMenu}
-                        >
+                        <Button variant="ghost" size="icon" onClick={closeMobileMenu}>
                           <X className="h-5 w-5" />
                         </Button>
                       </div>
 
-                      {/* Sidebar */}
                       <div className="flex-1 overflow-y-auto">
                         <Sidebar onNavigate={closeMobileMenu} />
                       </div>
@@ -122,27 +108,19 @@ export default function AdminLayout() {
                 </Sheet>
               </div>
 
-              {/* Title */}
               <div>
-                <h2 className="text-lg font-semibold text-gray-900">
-                  Admin Panel
-                </h2>
-                <p className="text-sm text-gray-500">
-                  Welcome back, {user?.name || "Admin"}
-                </p>
+                <h2 className="text-lg font-semibold text-gray-900">Admin Panel</h2>
+                <p className="text-sm text-gray-500">Welcome back, {user?.name || "Admin"}</p>
               </div>
             </div>
 
-            {/* Right side */}
             <div className="flex items-center gap-3">
               <div className="hidden text-right sm:block">
-                <p className="text-sm font-medium text-gray-900">
-                  {user?.email}
-                </p>
+                <p className="text-sm font-medium text-gray-900">{user?.email}</p>
                 <p className="text-xs text-gray-500">{user?.role}</p>
               </div>
 
-              <Button variant="outline" onClick={handleLogout}>
+              <Button variant="outline" onClick={handleLogout} aria-label="Logout">
                 <LogOut className="h-4 w-4" />
               </Button>
             </div>

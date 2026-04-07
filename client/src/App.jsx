@@ -31,6 +31,7 @@ import CustomerProfile from "./pages/Customer/CustomerProfile.jsx";
 
 /* Admin Pages */
 import AdminDashboard from "./pages/Admin/AdminDashboard.jsx";
+import AdminUsers from "./pages/Admin/AdminUsers.jsx";
 import AdminProviders from "./pages/Admin/AdminProviders.jsx";
 import AdminBookings from "./pages/Admin/AdminBookings.jsx";
 import AdminProfile from "./pages/Admin/AdminProfile.jsx";
@@ -112,6 +113,7 @@ export default function App() {
       >
         <Route index element={<Navigate to="/admin/dashboard" replace />} />
         <Route path="dashboard" element={<AdminDashboard />} />
+        <Route path="users" element={<AdminUsers />} />
         <Route path="providers" element={<AdminProviders />} />
         <Route path="bookings" element={<AdminBookings />} />
         <Route path="profile" element={<AdminProfile />} />

@@ -202,6 +202,15 @@ export const adminService = {
     return data.users || [];
   },
 
+  deleteUser: async (id, token) => {
+    const data = await request(`${API_URL}/admin/users/${id}`, {
+      method: "DELETE",
+      token,
+    });
+
+    return data?.user || data?.deletedUser || data || null;
+  },
+
   getProviders: async (token) => {
     const data = await request(`${API_URL}/admin/providers`, { token });
     return normalizeProviders(data.providers || []);

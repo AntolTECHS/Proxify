@@ -123,6 +123,65 @@ exports.getAllUsers = async (req, res) => {
 };
 
 /* ======================================================
+   DELETE USER
+====================================================== */
+exports.deleteUser = async (req, res) => {
+  if (!checkAdmin(req, res)) return;
+
+  try {
+    const { id } = req.params;
+
+    if (!id) {
+      return res.status(400).json({
+        success: false,
+        message: "User ID is required",
+      });
+    }
+
+    // Prevent admin from deleting their own account
+    if (req.user?._id && String(req.user._id) === String(id)) {
+      return res.status(400).json({
+        success: false,
+        message: "You cannot delete your own account",
+      });
+    }
+
+    const user = await User.findById(id);
+
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: "User not found",
+      });
+    }
+
+    // If this user has a provider profile, clean it up too
+    const providerProfile = await Provider.findOne({ user: id });
+
+    // Delete bookings where the user is the customer
+    await Booking.deleteMany({ customer: id });
+
+    // Delete provider-related data if the user is a provider
+    if (providerProfile) {
+      await Booking.deleteMany({ provider: providerProfile._id });
+      await Service.deleteMany({ provider: providerProfile._id });
+      await Provider.deleteOne({ _id: providerProfile._id });
+    }
+
+    // Finally delete the user
+    await User.deleteOne({ _id: id });
+
+    res.json({
+      success: true,
+      message: "User deleted successfully",
+    });
+  } catch (error) {
+    console.error("Delete user error:", error);
+    res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+/* ======================================================
    PROVIDERS
 ====================================================== */
 exports.getProviders = async (req, res) => {

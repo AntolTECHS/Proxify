@@ -217,7 +217,9 @@ const normalizeConversation = (conversation) => {
   if (!conversation) return null;
 
   const plain =
-    typeof conversation.toObject === "function" ? conversation.toObject() : conversation;
+    typeof conversation.toObject === "function"
+      ? conversation.toObject()
+      : conversation;
 
   return {
     ...plain,
@@ -334,6 +336,106 @@ router.get("/users", protect("admin"), async (req, res) => {
       total,
     });
   } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+});
+
+router.delete("/users/:id", protect("admin"), async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid user ID",
+      });
+    }
+
+    if (req.user?._id && String(req.user._id) === String(id)) {
+      return res.status(400).json({
+        success: false,
+        message: "You cannot delete your own account",
+      });
+    }
+
+    const user = await User.findById(id);
+
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: "User not found",
+      });
+    }
+
+    const providerProfile = await Provider.findOne({ user: id }).lean();
+
+    const bookingQuery = {
+      $or: [{ customer: id }],
+    };
+
+    if (providerProfile?._id) {
+      bookingQuery.$or.push({ provider: providerProfile._id });
+    }
+
+    const bookings = await Booking.find(bookingQuery).select("_id").lean();
+    const bookingIds = bookings.map((b) => b._id);
+
+    if (bookingIds.length > 0) {
+      const conversationsFromBookings = await Conversation.find({
+        $or: [
+          { bookingId: { $in: bookingIds } },
+          { booking: { $in: bookingIds } },
+        ],
+      })
+        .select("_id")
+        .lean();
+
+      const conversationIdsFromBookings = conversationsFromBookings.map(
+        (c) => c._id
+      );
+
+      if (conversationIdsFromBookings.length > 0) {
+        await Message.deleteMany({
+          conversationId: { $in: conversationIdsFromBookings },
+        });
+        await Conversation.deleteMany({
+          _id: { $in: conversationIdsFromBookings },
+        });
+      }
+
+      await Booking.deleteMany({ _id: { $in: bookingIds } });
+    }
+
+    const userConversations = await Conversation.find({
+      participants: id,
+    })
+      .select("_id")
+      .lean();
+
+    const userConversationIds = userConversations.map((c) => c._id);
+
+    if (userConversationIds.length > 0) {
+      await Message.deleteMany({
+        conversationId: { $in: userConversationIds },
+      });
+      await Conversation.deleteMany({
+        _id: { $in: userConversationIds },
+      });
+    }
+
+    if (providerProfile?._id) {
+      await Service.deleteMany({ provider: providerProfile._id });
+      await Provider.deleteOne({ _id: providerProfile._id });
+    }
+
+    await User.deleteOne({ _id: id });
+
+    res.json({
+      success: true,
+      message: "User deleted successfully",
+    });
+  } catch (err) {
+    console.error("DELETE USER ERROR:", err);
     res.status(500).json({ success: false, message: err.message });
   }
 });
