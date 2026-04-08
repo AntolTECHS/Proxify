@@ -1,22 +1,96 @@
+// controllers/bookingController.js
 import asyncHandler from "express-async-handler";
 import Booking from "../models/Booking.js";
 import Provider from "../models/Provider.js";
+import { geocodeAddress } from "../utils/geocode.js";
+
+const safeParseJSON = (value, fallback = null) => {
+  if (value === undefined || value === null || value === "") return fallback;
+  if (typeof value !== "string") return value;
+
+  try {
+    return JSON.parse(value);
+  } catch {
+    return fallback;
+  }
+};
+
+const parseNumberOrNull = (value) => {
+  if (value === undefined || value === null || value === "") return null;
+  const num = Number(value);
+  return Number.isFinite(num) ? num : null;
+};
+
+const buildLocationCoords = (lat, lng) => {
+  if (!Number.isFinite(lat) || !Number.isFinite(lng)) return null;
+  return {
+    type: "Point",
+    coordinates: [lng, lat],
+  };
+};
+
+const normalizeLocationCoords = async ({ lat, lng, locationText, locationGeoJSON }) => {
+  let finalLat = parseNumberOrNull(lat);
+  let finalLng = parseNumberOrNull(lng);
+
+  const geoInput = safeParseJSON(locationGeoJSON, null);
+  const geoCoords = Array.isArray(geoInput?.coordinates) ? geoInput.coordinates : null;
+
+  if ((!Number.isFinite(finalLat) || !Number.isFinite(finalLng)) && geoCoords?.length === 2) {
+    const maybeLng = Number(geoCoords[0]);
+    const maybeLat = Number(geoCoords[1]);
+    if (Number.isFinite(maybeLat) && Number.isFinite(maybeLng)) {
+      finalLat = maybeLat;
+      finalLng = maybeLng;
+    }
+  }
+
+  if ((!Number.isFinite(finalLat) || !Number.isFinite(finalLng)) && locationText) {
+    const geo = await geocodeAddress(locationText);
+    if (geo) {
+      finalLat = Number(geo.lat);
+      finalLng = Number(geo.lng);
+    }
+  }
+
+  const locationCoords = buildLocationCoords(finalLat, finalLng);
+
+  return {
+    lat: Number.isFinite(finalLat) ? finalLat : null,
+    lng: Number.isFinite(finalLng) ? finalLng : null,
+    locationCoords,
+  };
+};
 
 /* ================================
    ADD BOOKING (CUSTOMER)
 ================================ */
 export const addBooking = asyncHandler(async (req, res) => {
-  const { serviceId, providerId, scheduledAt, notes, lat, lng, location } = req.body;
+  const {
+    serviceId,
+    providerId,
+    scheduledAt,
+    notes,
+    paymentMethod,
+    lat,
+    lng,
+    location,
+    locationText,
+    locationGeoJSON,
+  } = req.body;
 
-  if (!serviceId || !providerId || !scheduledAt || !location) {
+  const finalLocationText = String(locationText ?? location ?? "").trim();
+
+  if (!serviceId || !providerId || !scheduledAt || !finalLocationText) {
     return res.status(400).json({
       success: false,
-      message: "Missing required fields: serviceId, providerId, scheduledAt, location",
+      message:
+        "Missing required fields: serviceId, providerId, scheduledAt, location",
     });
   }
 
   const scheduledDate = new Date(scheduledAt);
-  if (isNaN(scheduledDate.getTime())) {
+  if (Number.isNaN(scheduledDate.getTime())) {
     return res.status(400).json({
       success: false,
       message: "Invalid scheduledAt date",
@@ -32,7 +106,6 @@ export const addBooking = asyncHandler(async (req, res) => {
   }
 
   const service = provider.services.find((s) => s._id.toString() === serviceId);
-
   if (!service) {
     return res.status(400).json({
       success: false,
@@ -53,20 +126,36 @@ export const addBooking = asyncHandler(async (req, res) => {
     });
   }
 
-  const booking = await Booking.create({
+  const { lat: finalLat, lng: finalLng, locationCoords } =
+    await normalizeLocationCoords({
+      lat,
+      lng,
+      locationText: finalLocationText,
+      locationGeoJSON,
+    });
+
+  const bookingData = {
     customer: req.user._id,
     provider: providerId,
     serviceId: service._id,
     serviceName: service.name,
     scheduledAt: scheduledDate,
-    location,
-    notes: notes || "",
-    price: service.price || 0,
-    lat: lat ?? provider.lat ?? null,
-    lng: lng ?? provider.lng ?? null,
+    location: finalLocationText,
+    locationText: finalLocationText,
+    notes: String(notes || "").trim(),
+    price: Number(service.price) || 0,
+    paymentMethod: paymentMethod || "cash",
     status: "pending",
     paymentStatus: "unpaid",
-  });
+    lat: finalLat,
+    lng: finalLng,
+  };
+
+  if (locationCoords) {
+    bookingData.locationCoords = locationCoords;
+  }
+
+  const booking = await Booking.create(bookingData);
 
   return res.status(201).json({
     success: true,
@@ -119,7 +208,7 @@ export const getUserBookings = asyncHandler(async (req, res) => {
   const bookings = await Booking.find({ customer: userId })
     .populate({
       path: "provider",
-      select: "basicInfo rating reviewCount lat lng status",
+      select: "basicInfo rating reviewCount lat lng locationCoords status",
     })
     .sort({ createdAt: -1 })
     .lean();

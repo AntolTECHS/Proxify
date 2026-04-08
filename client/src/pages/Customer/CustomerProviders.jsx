@@ -1,7 +1,8 @@
 // src/pages/customer/CustomerProviders.jsx
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { FaStar, FaTimes, FaSearch, FaMapMarkerAlt } from "react-icons/fa";
 import { useAuth } from "../../context/AuthContext.jsx";
+import { geocodingClient } from "../../utils/mapboxClient";
 
 import { MapContainer, TileLayer, Marker, useMap } from "react-leaflet";
 import L from "leaflet";
@@ -12,8 +13,15 @@ import markerIcon from "leaflet/dist/images/marker-icon.png";
 import markerShadow from "leaflet/dist/images/marker-shadow.png";
 
 const API_URL = import.meta.env.VITE_API_URL || "http://localhost:5000/api";
+const BOOKING_DEBOUNCE_MS = 300;
+
+const MAP_TILE_URL =
+  "https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png";
+const MAP_ATTRIBUTION =
+  '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>';
 
 // Fix Leaflet default marker icons
+// @ts-ignore
 delete L.Icon.Default.prototype._getIconUrl;
 L.Icon.Default.mergeOptions({
   iconRetinaUrl: markerIcon2x,
@@ -21,14 +29,19 @@ L.Icon.Default.mergeOptions({
   shadowUrl: markerShadow,
 });
 
-function RecenterMap({ lat, lng }) {
+const toFiniteNumber = (value) => {
+  const num = Number(value);
+  return Number.isFinite(num) ? num : null;
+};
+
+function RecenterMap({ bounds }) {
   const map = useMap();
 
   useEffect(() => {
-    if (lat != null && lng != null) {
-      map.setView([lat, lng], 15);
+    if (bounds?.length === 2) {
+      map.fitBounds(bounds, { padding: [50, 50] });
     }
-  }, [lat, lng, map]);
+  }, [bounds, map]);
 
   return null;
 }
@@ -40,12 +53,42 @@ const getProviderCoords = (provider) => {
     provider?.coordinates ||
     [];
 
-  const lng = coords?.[0];
-  const lat = coords?.[1];
+  if (Array.isArray(coords) && coords.length === 2) {
+    const lng = toFiniteNumber(coords[0]);
+    const lat = toFiniteNumber(coords[1]);
+    if (lat != null && lng != null) return { lat, lng };
+  }
 
-  if (lat == null || lng == null) return null;
-  return { lat, lng };
+  if (Number.isFinite(provider?.lat) && Number.isFinite(provider?.lng)) {
+    return { lat: provider.lat, lng: provider.lng };
+  }
+
+  return null;
 };
+
+async function geocodeBookingLocation(query) {
+  const trimmed = String(query || "").trim();
+  if (!trimmed) return { suggestions: [], coords: null };
+
+  const res = await geocodingClient
+    .forwardGeocode({
+      query: trimmed,
+      limit: 5,
+      countries: ["ke"],
+      types: ["region", "place", "locality", "neighborhood", "address"],
+    })
+    .send();
+
+  const suggestions = res?.body?.features || [];
+  const first = suggestions[0];
+
+  const lng = first?.center?.[0];
+  const lat = first?.center?.[1];
+
+  const coords = Number.isFinite(lat) && Number.isFinite(lng) ? { lat, lng } : null;
+
+  return { suggestions, coords };
+}
 
 export default function CustomerProviders() {
   const { token } = useAuth();
@@ -62,11 +105,21 @@ export default function CustomerProviders() {
     date: "",
     time: "",
     location: "",
+    locationLat: null,
+    locationLng: null,
+    locationSuggestions: [],
+    locationLoading: false,
+    notes: "",
     serviceId: "",
   });
 
+  const bookingLocationTimeout = useRef(null);
+
   useEffect(() => {
-    if (!token) return;
+    if (!token) {
+      setLoading(false);
+      return;
+    }
 
     const fetchProviders = async () => {
       try {
@@ -85,7 +138,21 @@ export default function CustomerProviders() {
     };
 
     fetchProviders();
+
+    return () => {
+      if (bookingLocationTimeout.current) {
+        clearTimeout(bookingLocationTimeout.current);
+      }
+    };
   }, [token]);
+
+  useEffect(() => {
+    return () => {
+      if (bookingLocationTimeout.current) {
+        clearTimeout(bookingLocationTimeout.current);
+      }
+    };
+  }, []);
 
   const filteredProviders = providers.filter((p) => {
     const name = p.basicInfo?.providerName || p.name || "";
@@ -98,14 +165,93 @@ export default function CustomerProviders() {
     );
   });
 
+  const resetBookingForm = () => {
+    setBookingForm({
+      date: "",
+      time: "",
+      location: "",
+      locationLat: null,
+      locationLng: null,
+      locationSuggestions: [],
+      locationLoading: false,
+      notes: "",
+      serviceId: "",
+    });
+  };
+
+  const handleBookingLocationChange = (value) => {
+    setBookingForm((prev) => ({
+      ...prev,
+      location: value,
+      locationLat: null,
+      locationLng: null,
+      locationSuggestions: [],
+      locationLoading: Boolean(String(value || "").trim()),
+    }));
+
+    if (bookingLocationTimeout.current) {
+      clearTimeout(bookingLocationTimeout.current);
+    }
+
+    const trimmed = String(value || "").trim();
+    if (!trimmed) {
+      setBookingForm((prev) => ({
+        ...prev,
+        locationLoading: false,
+        locationSuggestions: [],
+        locationLat: null,
+        locationLng: null,
+      }));
+      return;
+    }
+
+    bookingLocationTimeout.current = setTimeout(async () => {
+      try {
+        const { suggestions, coords } = await geocodeBookingLocation(trimmed);
+
+        setBookingForm((prev) => ({
+          ...prev,
+          locationSuggestions: suggestions,
+          locationLoading: false,
+          locationLat: coords?.lat ?? null,
+          locationLng: coords?.lng ?? null,
+        }));
+      } catch (err) {
+        console.error("Booking location geocode failed:", err);
+        setBookingForm((prev) => ({
+          ...prev,
+          locationSuggestions: [],
+          locationLoading: false,
+        }));
+      }
+    }, BOOKING_DEBOUNCE_MS);
+  };
+
+  const selectBookingSuggestion = (place) => {
+    const lng = place?.center?.[0];
+    const lat = place?.center?.[1];
+    if (!Number.isFinite(lat) || !Number.isFinite(lng)) return;
+
+    setBookingForm((prev) => ({
+      ...prev,
+      location: place.place_name || prev.location,
+      locationLat: lat,
+      locationLng: lng,
+      locationSuggestions: [],
+      locationLoading: false,
+    }));
+  };
+
   const submitBooking = async () => {
-    if (!bookingForm.date || !bookingForm.time || !bookingForm.location) {
+    const locationText = String(bookingForm.location || "").trim();
+    const notes = String(bookingForm.notes || "").trim();
+
+    if (!bookingForm.date || !bookingForm.time || !locationText) {
       alert("Fill all booking fields");
       return;
     }
 
     const serviceId = bookingForm.serviceId || bookingProvider?.services?.[0]?._id;
-
     if (!serviceId) {
       alert("Please select a service");
       return;
@@ -113,6 +259,36 @@ export default function CustomerProviders() {
 
     try {
       const scheduledAt = new Date(`${bookingForm.date}T${bookingForm.time}`);
+      if (Number.isNaN(scheduledAt.getTime())) {
+        throw new Error("Please choose a valid booking date and time");
+      }
+
+      let lat = bookingForm.locationLat;
+      let lng = bookingForm.locationLng;
+
+      if (!Number.isFinite(lat) || !Number.isFinite(lng)) {
+        const geocodeResult = await geocodeBookingLocation(locationText);
+        lat = geocodeResult.coords?.lat ?? null;
+        lng = geocodeResult.coords?.lng ?? null;
+      }
+
+      const payload = {
+        providerId: bookingProvider._id,
+        serviceId,
+        scheduledAt: scheduledAt.toISOString(),
+        location: locationText,
+        locationText,
+        notes,
+      };
+
+      if (Number.isFinite(lat) && Number.isFinite(lng)) {
+        payload.lat = lat;
+        payload.lng = lng;
+        payload.locationGeoJSON = {
+          type: "Point",
+          coordinates: [lng, lat],
+        };
+      }
 
       const res = await fetch(`${API_URL}/bookings`, {
         method: "POST",
@@ -120,12 +296,7 @@ export default function CustomerProviders() {
           Authorization: `Bearer ${token}`,
           "Content-Type": "application/json",
         },
-        body: JSON.stringify({
-          providerId: bookingProvider._id,
-          serviceId,
-          scheduledAt,
-          location: bookingForm.location,
-        }),
+        body: JSON.stringify(payload),
       });
 
       const data = await res.json();
@@ -133,12 +304,7 @@ export default function CustomerProviders() {
 
       alert("Booking successful!");
       setBookingProvider(null);
-      setBookingForm({
-        date: "",
-        time: "",
-        location: "",
-        serviceId: "",
-      });
+      resetBookingForm();
     } catch (err) {
       alert(err.message);
     }
@@ -258,6 +424,7 @@ export default function CustomerProviders() {
                       onClick={(e) => {
                         e.stopPropagation();
                         setBookingProvider(p);
+                        setSelectedProvider(null);
                       }}
                       className="mt-3 w-full rounded-xl bg-teal-600 px-4 py-3 text-sm font-semibold text-white shadow-sm transition hover:bg-teal-700 focus:outline-none focus:ring-4 focus:ring-teal-200 sm:text-base"
                     >
@@ -311,7 +478,12 @@ export default function CustomerProviders() {
         )}
 
         {bookingProvider && (
-          <Modal onClose={() => setBookingProvider(null)}>
+          <Modal
+            onClose={() => {
+              setBookingProvider(null);
+              resetBookingForm();
+            }}
+          >
             <h2 className="mb-6 text-center text-2xl font-bold text-slate-900">
               Book {bookingProvider.basicInfo?.providerName || bookingProvider.name}
             </h2>
@@ -367,16 +539,60 @@ export default function CustomerProviders() {
                 </div>
               </div>
 
-              <div>
+              <div className="relative">
                 <label className="mb-1 block text-sm font-medium text-slate-700">
                   Location
                 </label>
-                <input
-                  placeholder="Enter location"
+                <div className="relative">
+                  <FaSearch className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" />
+                  <input
+                    placeholder="Enter location (estate, street, landmark, town)"
+                    className="w-full rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 pl-11 outline-none transition focus:border-teal-600 focus:bg-white focus:ring-4 focus:ring-teal-100"
+                    value={bookingForm.location}
+                    onChange={(e) => handleBookingLocationChange(e.target.value)}
+                  />
+                </div>
+
+                <p className="mt-2 text-xs text-slate-500">
+                  The booking saves your typed location and converts it into coordinates before submission.
+                </p>
+
+                {bookingForm.locationLoading && (
+                  <p className="mt-2 text-xs font-medium text-teal-600">Finding coordinates...</p>
+                )}
+
+                {bookingForm.locationLat != null && bookingForm.locationLng != null && (
+                  <p className="mt-2 text-xs text-emerald-600">
+                    Coordinates found: {bookingForm.locationLat.toFixed(5)}, {bookingForm.locationLng.toFixed(5)}
+                  </p>
+                )}
+
+                {bookingForm.locationSuggestions.length > 0 && (
+                  <ul className="absolute z-50 mt-2 max-h-60 w-full overflow-auto rounded-xl border border-slate-200 bg-white shadow-xl">
+                    {bookingForm.locationSuggestions.map((place, idx) => (
+                      <li
+                        key={`${place.id || idx}`}
+                        className="cursor-pointer border-b border-slate-100 px-4 py-3 text-sm text-slate-700 hover:bg-teal-50"
+                        onClick={() => selectBookingSuggestion(place)}
+                      >
+                        {place.place_name}
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+
+              <div>
+                <label className="mb-1 block text-sm font-medium text-slate-700">
+                  Notes
+                </label>
+                <textarea
+                  placeholder="Add any helpful details"
+                  rows={3}
                   className="w-full rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 outline-none transition focus:border-teal-600 focus:bg-white focus:ring-4 focus:ring-teal-100"
-                  value={bookingForm.location}
+                  value={bookingForm.notes}
                   onChange={(e) =>
-                    setBookingForm({ ...bookingForm, location: e.target.value })
+                    setBookingForm({ ...bookingForm, notes: e.target.value })
                   }
                 />
               </div>
@@ -433,6 +649,11 @@ const MapModal = ({ provider, onClose }) => {
     );
   }
 
+  const bounds = [
+    [coords.lat, coords.lng],
+    [coords.lat, coords.lng],
+  ];
+
   return (
     <Modal onClose={onClose}>
       <h2 className="mb-2 text-xl font-bold text-teal-600">
@@ -443,17 +664,23 @@ const MapModal = ({ provider, onClose }) => {
         <p className="mb-3 text-sm text-gray-500">{provider.basicInfo.location}</p>
       )}
 
-      <div className="h-80 overflow-hidden rounded-xl border">
+      <div className="h-80 overflow-hidden rounded-xl border shadow-sm">
         <MapContainer
           center={[coords.lat, coords.lng]}
-          zoom={15}
+          zoom={17}
           className="h-full w-full"
+          scrollWheelZoom={true}
+          zoomControl={true}
         >
-          <TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
-          <RecenterMap lat={coords.lat} lng={coords.lng} />
+          <TileLayer url={MAP_TILE_URL} attribution={MAP_ATTRIBUTION} />
+          <RecenterMap bounds={bounds} />
           <Marker position={[coords.lat, coords.lng]} />
         </MapContainer>
       </div>
+
+      <p className="mt-3 text-sm text-gray-500">
+        This view uses a street map style with stronger labels and nearby roads.
+      </p>
     </Modal>
   );
 };

@@ -24,6 +24,11 @@ import markerShadow from "leaflet/dist/images/marker-shadow.png";
 
 const API_URL = import.meta.env.VITE_API_URL || "http://localhost:5000/api";
 
+const MAP_TILE_URL =
+  "https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png";
+const MAP_ATTRIBUTION =
+  '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>';
+
 // Fix Leaflet default marker icons
 delete L.Icon.Default.prototype._getIconUrl;
 L.Icon.Default.mergeOptions({
@@ -45,30 +50,43 @@ const formatKES = (amount) =>
     maximumFractionDigits: 0,
   }).format(Number(amount || 0));
 
-function RecenterMap({ lat, lng }) {
+const toFiniteNumber = (value) => {
+  const num = Number(value);
+  return Number.isFinite(num) ? num : null;
+};
+
+function RecenterMap({ bounds }) {
   const map = useMap();
 
   useEffect(() => {
-    if (lat != null && lng != null) {
-      map.setView([lat, lng], 15);
+    if (bounds?.length === 2) {
+      map.fitBounds(bounds, { padding: [50, 50] });
     }
-  }, [lat, lng, map]);
+  }, [bounds, map]);
 
   return null;
 }
 
 const getProviderCoords = (provider) => {
+  if (!provider) return null;
+
   const coords =
     provider?.location?.coordinates ||
     provider?.locationGeoJSON?.coordinates ||
     provider?.coordinates ||
     [];
 
-  const lng = coords?.[0];
-  const lat = coords?.[1];
+  if (Array.isArray(coords) && coords.length === 2) {
+    const lng = toFiniteNumber(coords[0]);
+    const lat = toFiniteNumber(coords[1]);
+    if (lat != null && lng != null) return { lat, lng };
+  }
 
-  if (lat == null || lng == null) return null;
-  return { lat, lng };
+  if (Number.isFinite(provider?.lat) && Number.isFinite(provider?.lng)) {
+    return { lat: provider.lat, lng: provider.lng };
+  }
+
+  return null;
 };
 
 export default function CustomerDashboard() {
@@ -655,6 +673,11 @@ const MapModal = ({ provider, onClose }) => {
     );
   }
 
+  const bounds = [
+    [coords.lat, coords.lng],
+    [coords.lat, coords.lng],
+  ];
+
   return (
     <Modal onClose={onClose} panelClassName="max-w-md lg:max-w-md">
       <div className="p-6 pt-10 sm:p-6 sm:pt-10">
@@ -666,13 +689,23 @@ const MapModal = ({ provider, onClose }) => {
           <p className="mb-3 text-sm text-gray-500">{provider.basicInfo.location}</p>
         )}
 
-        <div className="h-72 overflow-hidden rounded-xl border">
-          <MapContainer center={[coords.lat, coords.lng]} zoom={15} className="h-full w-full">
-            <TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
-            <RecenterMap lat={coords.lat} lng={coords.lng} />
+        <div className="h-72 overflow-hidden rounded-xl border shadow-sm">
+          <MapContainer
+            center={[coords.lat, coords.lng]}
+            zoom={17}
+            className="h-full w-full"
+            scrollWheelZoom={true}
+            zoomControl={true}
+          >
+            <TileLayer url={MAP_TILE_URL} attribution={MAP_ATTRIBUTION} />
+            <RecenterMap bounds={bounds} />
             <Marker position={[coords.lat, coords.lng]} />
           </MapContainer>
         </div>
+
+        <p className="mt-3 text-sm text-gray-500">
+          This view uses a street map style with stronger labels and nearby roads.
+        </p>
       </div>
     </Modal>
   );
@@ -719,7 +752,9 @@ const ProviderModal = ({
           </div>
 
           <p className="mt-3 text-sm leading-6 text-slate-600">
-            {selectedProvider.experience ? `${selectedProvider.experience} years experience` : "Experience not listed"}
+            {selectedProvider.experience
+              ? `${selectedProvider.experience} years experience`
+              : "Experience not listed"}
           </p>
 
           {location && <p className="mt-1 text-sm text-slate-500">{location}</p>}
@@ -754,9 +789,7 @@ const ProviderModal = ({
 
         {coords && (
           <button
-            onClick={() => {
-              setSelectedProvider(null);
-            }}
+            onClick={() => setSelectedProvider(null)}
             className="mt-4 inline-flex w-full items-center justify-center gap-2 rounded-xl bg-slate-100 px-4 py-3 text-sm font-semibold text-slate-700 transition hover:bg-slate-200"
           >
             <FaMapMarkerAlt />
