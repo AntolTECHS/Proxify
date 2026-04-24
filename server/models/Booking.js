@@ -1,4 +1,4 @@
-const mongoose = require("mongoose");
+import mongoose from "mongoose";
 
 const locationCoordsSchema = new mongoose.Schema(
   {
@@ -46,12 +46,14 @@ const bookingSchema = new mongoose.Schema(
     serviceId: {
       type: mongoose.Schema.Types.ObjectId,
       required: true,
+      index: true,
     },
 
     serviceName: {
       type: String,
       required: true,
       trim: true,
+      index: true,
     },
 
     status: {
@@ -117,6 +119,7 @@ const bookingSchema = new mongoose.Schema(
       type: Number,
       min: 1,
       max: 5,
+      default: null,
     },
 
     feedback: {
@@ -124,11 +127,35 @@ const bookingSchema = new mongoose.Schema(
       trim: true,
       default: "",
     },
+
+    hasDispute: {
+      type: Boolean,
+      default: false,
+      index: true,
+    },
+
+    disputeId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Dispute",
+      default: null,
+      index: true,
+    },
+
+    disputeStatus: {
+      type: String,
+      enum: ["none", "open", "responded", "under_review", "resolved", "closed"],
+      default: "none",
+      index: true,
+    },
   },
   { timestamps: true }
 );
 
 bookingSchema.index({ locationCoords: "2dsphere" });
+bookingSchema.index({ customer: 1, createdAt: -1 });
+bookingSchema.index({ provider: 1, createdAt: -1 });
+bookingSchema.index({ status: 1, scheduledAt: -1 });
+bookingSchema.index({ disputeId: 1, disputeStatus: 1 });
 
 bookingSchema.pre("validate", function () {
   const hasLatLng = Number.isFinite(this.lat) && Number.isFinite(this.lng);
@@ -157,6 +184,18 @@ bookingSchema.pre("save", function () {
   if (this.isModified("status") && this.status === "completed") {
     this.paymentStatus = "paid";
   }
+
+  if (this.isModified("disputeId")) {
+    this.hasDispute = Boolean(this.disputeId);
+  }
+
+  if (this.isModified("disputeStatus") && !this.disputeStatus) {
+    this.disputeStatus = "none";
+  }
+
+  if (!this.hasDispute && !this.disputeId) {
+    this.disputeStatus = "none";
+  }
 });
 
-module.exports = mongoose.model("Booking", bookingSchema);
+export default mongoose.model("Booking", bookingSchema);

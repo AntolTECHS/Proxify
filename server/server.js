@@ -47,6 +47,7 @@ if (process.env.NODE_ENV === "development") {
 
 /* ======================
    Static Files
+   (kept for any legacy/local uploads; dispute evidence uses Cloudinary)
 ====================== */
 app.use("/uploads", express.static(path.join(__dirname, "uploads")));
 
@@ -63,6 +64,10 @@ const reviewRoutes = (await import("./routes/reviewRoutes.js")).default;
 const chatRoutes = (await import("./routes/chatRoutes.js")).default;
 const adminRoutes = (await import("./routes/adminRoutes.js")).default;
 
+/* Dispute module */
+const disputeRoutes = (await import("./routes/disputeRoutes.js")).default;
+const adminDisputeRoutes = (await import("./routes/adminDisputeRoutes.js")).default;
+
 /* ======================
    API Routes
 ====================== */
@@ -73,7 +78,14 @@ app.use("/api/bookings", bookingRoutes);
 app.use("/api/reviews", reviewRoutes);
 app.use("/api/community", communityRoutes);
 app.use("/api/chat", chatRoutes);
-app.use("/api/admin", adminRoutes); // ✅ Added admin routes here
+
+/* Disputes */
+app.use("/api/disputes", disputeRoutes);
+app.use("/api/admin/disputes", adminDisputeRoutes);
+
+/* Existing admin routes */
+app.use("/api/admin", adminRoutes);
+
 app.use("/api", searchProxy);
 
 /* ======================
@@ -113,10 +125,8 @@ app.use((err, req, res, next) => {
 ====================== */
 const PORT = process.env.PORT || 5000;
 
-// Use native http server to attach socket.io
 const server = http.createServer(app);
 
-// Initialize Socket.io layer
 initSocket(server);
 
 server.listen(PORT, () => {

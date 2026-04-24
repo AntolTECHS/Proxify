@@ -16,6 +16,26 @@ const safeParseJSON = (value) => {
   }
 };
 
+const normalizeId = (value) => {
+  if (!value) return null;
+  if (typeof value === "string" || typeof value === "number") return String(value);
+
+  return String(
+    value._id ||
+      value.id ||
+      value.userId ||
+      value.uid ||
+      value?.data?._id ||
+      value?.data?.id ||
+      ""
+  ) || null;
+};
+
+const getUserId = (user) => {
+  if (!user) return null;
+  return normalizeId(user);
+};
+
 const readStoredAuth = () => {
   const storedToken = localStorage.getItem("token");
   const storedUser = localStorage.getItem("user");
@@ -95,7 +115,7 @@ export const AuthProvider = ({ children }) => {
 
       saveAuth(data.user, data.token);
       setStatus("success");
-      return { success: true, user: data.user };
+      return { success: true, user: data.user, token: data.token };
     } catch (err) {
       setStatus("error");
       setError(err);
@@ -128,7 +148,7 @@ export const AuthProvider = ({ children }) => {
 
       saveAuth(data.user, data.token);
       setStatus("success");
-      return { success: true, user: data.user };
+      return { success: true, user: data.user, token: data.token };
     } catch (err) {
       setStatus("error");
       setError(err);
@@ -178,7 +198,7 @@ export const AuthProvider = ({ children }) => {
 
       navigate("/provider/dashboard", { replace: true });
 
-      return { success: true, user: updatedUser };
+      return { success: true, user: updatedUser, token: newToken };
     } catch (err) {
       setStatus("error");
       setError(err);
@@ -197,9 +217,14 @@ export const AuthProvider = ({ children }) => {
 
   const isAuthenticated = useMemo(() => Boolean(user && token), [user, token]);
 
+  const currentUserId = useMemo(() => getUserId(user), [user]);
+
   const value = {
     user,
     token,
+    currentUserId,
+    currentUser: user,
+    userId: currentUserId,
     status,
     error,
     isLoading,

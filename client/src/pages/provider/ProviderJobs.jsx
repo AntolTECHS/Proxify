@@ -1,10 +1,24 @@
 // src/pages/provider/ProviderJobs.jsx
 import { useEffect, useMemo, useState } from "react";
-import { FaTimes, FaMapMarkerAlt, FaMap, FaEyeSlash } from "react-icons/fa";
+import { useNavigate } from "react-router-dom";
+import {
+  FaTimes,
+  FaMapMarkerAlt,
+  FaMap,
+  FaEyeSlash,
+  FaExclamationTriangle,
+} from "react-icons/fa";
 import { useAuth } from "../../context/AuthContext.jsx";
 import Chat from "../../components/Chat/Chat.jsx";
+import { createDispute } from "../../api/disputeApi.js";
 
-import { MapContainer, Marker, Polyline, TileLayer, useMap } from "react-leaflet";
+import {
+  MapContainer,
+  Marker,
+  Polyline,
+  TileLayer,
+  useMap,
+} from "react-leaflet";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
 
@@ -14,6 +28,16 @@ import markerShadow from "leaflet/dist/images/marker-shadow.png";
 
 const API = import.meta.env.VITE_API_URL || "http://localhost:5000/api";
 
+const DISPUTE_OPTIONS = [
+  { value: "no_show", label: "Other party did not show up" },
+  { value: "poor_quality", label: "Poor service quality" },
+  { value: "scope_mismatch", label: "Scope mismatch" },
+  { value: "payment_issue", label: "Payment issue" },
+  { value: "damage", label: "Damage or loss" },
+  { value: "other", label: "Other" },
+];
+
+/* ================= Leaflet Fix ================= */
 delete L.Icon.Default.prototype._getIconUrl;
 L.Icon.Default.mergeOptions({
   iconRetinaUrl: markerIcon2x,
@@ -21,6 +45,7 @@ L.Icon.Default.mergeOptions({
   shadowUrl: markerShadow,
 });
 
+/* ================= Utils ================= */
 const formatKES = (amount) =>
   new Intl.NumberFormat("en-KE", {
     style: "currency",
@@ -82,8 +107,12 @@ const getProviderCoords = (provider) => {
   return null;
 };
 
+const getDisputeIdFromJob = (job) =>
+  job?.disputeId?._id || job?.disputeId || job?.dispute?._id || null;
+
 export default function ProviderJobs() {
-  const { token } = useAuth();
+  const { token, user } = useAuth();
+  const navigate = useNavigate();
 
   const [jobs, setJobs] = useState([]);
   const [modalJob, setModalJob] = useState(null);
@@ -92,7 +121,23 @@ export default function ProviderJobs() {
   const [showMap, setShowMap] = useState(true);
   const [error, setError] = useState("");
   const [providerCoords, setProviderCoords] = useState(null);
+  const [disputeBusyId, setDisputeBusyId] = useState(null);
 
+  const [disputeJob, setDisputeJob] = useState(null);
+  const [disputeData, setDisputeData] = useState({
+    category: "",
+    issue: "",
+  });
+
+  const resetDisputeModal = () => {
+    setDisputeJob(null);
+    setDisputeData({
+      category: "",
+      issue: "",
+    });
+  };
+
+  /* ================= Fetch Provider ================= */
   const fetchProviderProfile = async () => {
     if (!token) return;
 
@@ -111,6 +156,7 @@ export default function ProviderJobs() {
     }
   };
 
+  /* ================= Fetch Jobs ================= */
   const fetchJobs = async () => {
     if (!token) return;
 
@@ -142,6 +188,17 @@ export default function ProviderJobs() {
     fetchJobs();
   }, [token]);
 
+  /* ================= Keep modal in sync ================= */
+  useEffect(() => {
+    if (!modalJob?._id) return;
+
+    const updated = jobs.find((job) => job._id === modalJob._id);
+    if (updated) {
+      setModalJob(updated);
+    }
+  }, [jobs, modalJob?._id]);
+
+  /* ================= Status Update ================= */
   const updateStatus = async (id, status) => {
     try {
       const res = await fetch(`${API}/bookings/${id}/status`, {
@@ -172,6 +229,107 @@ export default function ProviderJobs() {
     }
   };
 
+  /* ================= Dispute ================= */
+  const openDisputeFromJob = (job) => {
+    if (!job?._id) return;
+
+    const existingDisputeId = getDisputeIdFromJob(job);
+
+    if (existingDisputeId) {
+      navigate(`/provider/disputes/${existingDisputeId}`);
+      return;
+    }
+
+    setDisputeJob(job);
+    setDisputeData({
+      category: "",
+      issue: "",
+    });
+  };
+
+  const submitDispute = async () => {
+    if (!disputeJob) return;
+
+    if (!disputeData.category) {
+      alert("Please select a reason for the dispute.");
+      return;
+    }
+
+    if (!disputeData.issue.trim()) {
+      alert("Please describe the issue.");
+      return;
+    }
+
+    const serviceName = disputeJob.serviceName || disputeJob.service?.name || "Job";
+    const customerName = disputeJob.customer?.name || "Customer";
+    const providerName =
+      user?.name ||
+      user?.basicInfo?.providerName ||
+      "Provider";
+
+    const fullDescription = `Service: ${serviceName}
+Provider: ${providerName}
+Customer: ${customerName}
+
+Issue: ${disputeData.issue.trim()}`;
+
+    setDisputeBusyId(disputeJob._id);
+
+    try {
+      const disputeResult = await createDispute({
+        jobId: disputeJob._id,
+        category: disputeData.category,
+        description: fullDescription,
+      });
+
+      const dispute = disputeResult?.data || disputeResult;
+      const disputeId = dispute?._id || dispute?.id;
+
+      if (!disputeId) {
+        throw new Error("Invalid dispute response");
+      }
+
+      setJobs((prev) =>
+        prev.map((j) =>
+          j._id === disputeJob._id
+            ? {
+                ...j,
+                disputeId,
+                hasDispute: true,
+                disputeStatus: dispute?.status || j.disputeStatus || "open",
+              }
+            : j
+        )
+      );
+
+      if (modalJob?._id === disputeJob._id) {
+        setModalJob((prev) =>
+          prev
+            ? {
+                ...prev,
+                disputeId,
+                hasDispute: true,
+                disputeStatus: dispute?.status || prev.disputeStatus || "open",
+              }
+            : prev
+        );
+      }
+
+      resetDisputeModal();
+      navigate(`/provider/disputes/${disputeId}`);
+    } catch (err) {
+      console.error("Open dispute error:", err);
+      alert(
+        err?.response?.data?.message ||
+          err?.message ||
+          "Failed to open dispute"
+      );
+    } finally {
+      setDisputeBusyId(null);
+    }
+  };
+
+  /* ================= UI Helpers ================= */
   const statusColor = (status) => {
     if (status === "pending") return "text-yellow-600";
     if (status === "accepted") return "text-blue-600";
@@ -189,6 +347,7 @@ export default function ProviderJobs() {
   };
 
   const modalCoords = getBookingCoords(modalJob);
+
   const routeBounds = useMemo(() => {
     if (!providerCoords || !modalCoords) return null;
     return [
@@ -203,6 +362,20 @@ export default function ProviderJobs() {
     setShowMap(true);
   };
 
+  const renderDisputeButtonLabel = (job) => {
+    const disputeId = getDisputeIdFromJob(job);
+    if (disputeId) return "View Dispute";
+    if (disputeBusyId === job._id) return "Opening...";
+    return "Raise Dispute";
+  };
+
+  const disputeServiceName =
+    disputeJob?.serviceName || disputeJob?.service?.name || "Job";
+  const disputeCustomerName = disputeJob?.customer?.name || "Customer";
+  const disputeProviderName =
+    user?.name || user?.basicInfo?.providerName || "Provider";
+
+  /* ================= UI ================= */
   return (
     <div className="w-full min-h-screen bg-gray-100 p-4 md:p-6">
       <h1 className="mb-6 text-3xl font-bold text-gray-800">Your Jobs</h1>
@@ -239,30 +412,69 @@ export default function ProviderJobs() {
             </thead>
 
             <tbody className="divide-y">
-              {jobs.map((job) => (
-                <tr key={job._id} className="hover:bg-gray-50">
-                  <td className="px-4 py-2">{job.serviceName}</td>
-                  <td className="px-4 py-2">{job.customer?.name}</td>
-                  <td className="px-4 py-2">
-                    {new Date(job.scheduledAt).toLocaleDateString()}
-                  </td>
-                  <td className={`px-4 py-2 font-semibold ${statusColor(job.status)}`}>
-                    {job.status}
-                  </td>
-                  <td className="px-4 py-2">
-                    <button
-                      onClick={() => {
-                        setModalJob(job);
-                        setShowChat(false);
-                        setShowMap(true);
-                      }}
-                      className="rounded bg-sky-500 px-3 py-1 text-sm text-white hover:bg-sky-600"
+              {jobs.map((job) => {
+                const disputeId = getDisputeIdFromJob(job);
+                const hasDispute = Boolean(disputeId);
+
+                return (
+                  <tr key={job._id} className="hover:bg-gray-50">
+                    <td className="px-4 py-2">
+                      <div className="flex items-center gap-2">
+                        <span>{job.serviceName || job.service?.name || "—"}</span>
+                        {hasDispute && (
+                          <span className="rounded-full bg-red-50 px-2 py-0.5 text-xs font-semibold text-red-700">
+                            Dispute
+                          </span>
+                        )}
+                      </div>
+                    </td>
+
+                    <td className="px-4 py-2">{job.customer?.name || "—"}</td>
+
+                    <td className="px-4 py-2">
+                      {job.scheduledAt
+                        ? new Date(job.scheduledAt).toLocaleDateString()
+                        : "—"}
+                    </td>
+
+                    <td
+                      className={`px-4 py-2 font-semibold ${statusColor(
+                        job.status
+                      )}`}
                     >
-                      View
-                    </button>
-                  </td>
-                </tr>
-              ))}
+                      {job.status || "—"}
+                    </td>
+
+                    <td className="px-4 py-2">
+                      <div className="flex flex-wrap gap-2">
+                        <button
+                          onClick={() => {
+                            setModalJob(job);
+                            setShowChat(false);
+                            setShowMap(true);
+                          }}
+                          className="rounded bg-sky-500 px-3 py-1 text-sm text-white hover:bg-sky-600"
+                        >
+                          View
+                        </button>
+
+                        <button
+                          onClick={() => openDisputeFromJob(job)}
+                          disabled={disputeBusyId === job._id}
+                          className={`inline-flex items-center gap-2 rounded px-3 py-1 text-sm text-white disabled:cursor-not-allowed disabled:opacity-60 ${
+                            hasDispute
+                              ? "bg-purple-600 hover:bg-purple-700"
+                              : "bg-amber-500 hover:bg-amber-600"
+                          }`}
+                        >
+                          <FaExclamationTriangle />
+                          {renderDisputeButtonLabel(job)}
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         </div>
@@ -294,20 +506,33 @@ export default function ProviderJobs() {
               </div>
             ) : (
               <div className="min-h-0 flex-1 overflow-y-auto p-5 md:p-6">
-                <h2 className="mb-4 text-xl font-semibold">{modalJob.serviceName}</h2>
+                <h2 className="mb-4 text-xl font-semibold">
+                  {modalJob.serviceName || modalJob.service?.name || "Job Details"}
+                </h2>
 
                 <div className="space-y-1 text-sm md:text-base">
                   <p>
-                    <strong>Customer:</strong> {modalJob.customer?.name}
+                    <strong>Customer:</strong> {modalJob.customer?.name || "—"}
                   </p>
                   <p>
-                    <strong>Date:</strong> {new Date(modalJob.scheduledAt).toLocaleString()}
+                    <strong>Date:</strong>{" "}
+                    {modalJob.scheduledAt
+                      ? new Date(modalJob.scheduledAt).toLocaleString()
+                      : "—"}
                   </p>
                   <p>
-                    <strong>Location:</strong> {modalJob.location}
+                    <strong>Location:</strong> {modalJob.location || "—"}
                   </p>
 
-                  <div className="mt-4 flex items-center gap-3">
+                  {(getDisputeIdFromJob(modalJob) || modalJob.hasDispute) && (
+                    <div className="mt-2">
+                      <div className="mb-2 inline-flex items-center rounded-full bg-red-50 px-3 py-1 text-sm font-semibold text-red-700">
+                        Dispute raised for this job
+                      </div>
+                    </div>
+                  )}
+
+                  <div className="mt-4 flex flex-wrap items-center gap-3">
                     <button
                       type="button"
                       onClick={() => setShowMap((v) => !v)}
@@ -316,65 +541,93 @@ export default function ProviderJobs() {
                       {showMap ? <FaEyeSlash /> : <FaMap />}
                       {showMap ? "Hide Map" : "Show Map"}
                     </button>
+
+                    <button
+                      type="button"
+                      onClick={() => openDisputeFromJob(modalJob)}
+                      disabled={disputeBusyId === modalJob._id}
+                      className={`inline-flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-60 ${
+                        getDisputeIdFromJob(modalJob) || modalJob.hasDispute
+                          ? "bg-purple-600 hover:bg-purple-700"
+                          : "bg-amber-500 hover:bg-amber-600"
+                      }`}
+                    >
+                      <FaExclamationTriangle />
+                      {renderDisputeButtonLabel(modalJob)}
+                    </button>
                   </div>
 
                   {showMap ? (
-                    providerCoords && modalCoords ? (
-                      <div className="mt-4">
-                        <div className="mb-2 flex items-center gap-2 text-sm font-semibold text-sky-600">
-                          <FaMapMarkerAlt />
-                          Provider and customer route
-                        </div>
-                        <div className="h-80 overflow-hidden rounded-xl border">
-                          <MapContainer
-                            center={[
-                              (providerCoords.lat + modalCoords.lat) / 2,
-                              (providerCoords.lng + modalCoords.lng) / 2,
-                            ]}
-                            zoom={14}
-                            scrollWheelZoom={true}
-                            className="h-full w-full"
-                          >
-                            <TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
-                            <RecenterMap bounds={routeBounds} />
-                            <Marker position={[providerCoords.lat, providerCoords.lng]} />
-                            <Marker position={[modalCoords.lat, modalCoords.lng]} />
-                            <Polyline
-                              positions={[
-                                [providerCoords.lat, providerCoords.lng],
-                                [modalCoords.lat, modalCoords.lng],
+                    modalCoords ? (
+                      providerCoords ? (
+                        <div className="mt-4">
+                          <div className="mb-2 flex items-center gap-2 text-sm font-semibold text-sky-600">
+                            <FaMapMarkerAlt />
+                            Provider and customer route
+                          </div>
+                          <div className="h-80 overflow-hidden rounded-xl border">
+                            <MapContainer
+                              center={[
+                                (providerCoords.lat + modalCoords.lat) / 2,
+                                (providerCoords.lng + modalCoords.lng) / 2,
                               ]}
-                              pathOptions={{ color: "blue", weight: 4, opacity: 0.85 }}
-                            />
-                          </MapContainer>
+                              zoom={14}
+                              scrollWheelZoom={true}
+                              className="h-full w-full"
+                            >
+                              <TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
+                              <RecenterMap bounds={routeBounds} />
+                              <Marker
+                                position={[
+                                  providerCoords.lat,
+                                  providerCoords.lng,
+                                ]}
+                              />
+                              <Marker position={[modalCoords.lat, modalCoords.lng]} />
+                              <Polyline
+                                positions={[
+                                  [providerCoords.lat, providerCoords.lng],
+                                  [modalCoords.lat, modalCoords.lng],
+                                ]}
+                                pathOptions={{
+                                  color: "blue",
+                                  weight: 4,
+                                  opacity: 0.85,
+                                }}
+                              />
+                            </MapContainer>
+                          </div>
                         </div>
-                      </div>
-                    ) : modalCoords ? (
-                      <div className="mt-4">
-                        <div className="mb-2 flex items-center gap-2 text-sm font-semibold text-sky-600">
-                          <FaMapMarkerAlt />
-                          Customer location on map
+                      ) : (
+                        <div className="mt-4">
+                          <div className="mb-2 flex items-center gap-2 text-sm font-semibold text-sky-600">
+                            <FaMapMarkerAlt />
+                            Customer location on map
+                          </div>
+                          <div className="h-72 overflow-hidden rounded-xl border">
+                            <MapContainer
+                              center={[modalCoords.lat, modalCoords.lng]}
+                              zoom={14}
+                              scrollWheelZoom={true}
+                              className="h-full w-full"
+                            >
+                              <TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
+                              <RecenterMap
+                                bounds={[
+                                  [modalCoords.lat, modalCoords.lng],
+                                  [modalCoords.lat, modalCoords.lng],
+                                ]}
+                              />
+                              <Marker position={[modalCoords.lat, modalCoords.lng]} />
+                            </MapContainer>
+                          </div>
+                          {!providerCoords && (
+                            <p className="mt-2 text-sm text-gray-500">
+                              Provider coordinates are not available yet.
+                            </p>
+                          )}
                         </div>
-                        <div className="h-72 overflow-hidden rounded-xl border">
-                          <MapContainer
-                            center={[modalCoords.lat, modalCoords.lng]}
-                            zoom={14}
-                            scrollWheelZoom={true}
-                            className="h-full w-full"
-                          >
-                            <TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
-                            <RecenterMap
-                              bounds={[[modalCoords.lat, modalCoords.lng], [modalCoords.lat, modalCoords.lng]]}
-                            />
-                            <Marker position={[modalCoords.lat, modalCoords.lng]} />
-                          </MapContainer>
-                        </div>
-                        {!providerCoords && (
-                          <p className="mt-2 text-sm text-gray-500">
-                            Provider coordinates are not available yet.
-                          </p>
-                        )}
-                      </div>
+                      )
                     ) : (
                       <p className="mt-2 text-sm text-gray-500">
                         No saved map coordinates are available for this booking.
@@ -386,18 +639,22 @@ export default function ProviderJobs() {
                     </p>
                   )}
 
-                  <p>
+                  <p className="mt-2">
                     <strong>Price:</strong> {formatKES(modalJob.price)}
                   </p>
                   <p>
                     <strong>Status:</strong>{" "}
                     <span className={`font-semibold ${statusColor(modalJob.status)}`}>
-                      {modalJob.status}
+                      {modalJob.status || "—"}
                     </span>
                   </p>
                   <p>
                     <strong>Payment:</strong>{" "}
-                    <span className={`font-semibold ${paymentColor(modalJob.paymentStatus)}`}>
+                    <span
+                      className={`font-semibold ${paymentColor(
+                        modalJob.paymentStatus
+                      )}`}
+                    >
                       {modalJob.paymentStatus || "unpaid"}
                     </span>
                   </p>
@@ -436,14 +693,15 @@ export default function ProviderJobs() {
                     </button>
                   )}
 
-                  {modalJob.status !== "completed" && modalJob.status !== "cancelled" && (
-                    <button
-                      onClick={() => updateStatus(modalJob._id, "cancelled")}
-                      className="rounded bg-red-500 px-4 py-2 text-white"
-                    >
-                      Cancel
-                    </button>
-                  )}
+                  {modalJob.status !== "completed" &&
+                    modalJob.status !== "cancelled" && (
+                      <button
+                        onClick={() => updateStatus(modalJob._id, "cancelled")}
+                        className="rounded bg-red-500 px-4 py-2 text-white"
+                      >
+                        Cancel
+                      </button>
+                    )}
 
                   <button
                     onClick={() => setShowChat(true)}
@@ -451,12 +709,129 @@ export default function ProviderJobs() {
                   >
                     Open Chat
                   </button>
+
+                  <button
+                    onClick={() => openDisputeFromJob(modalJob)}
+                    disabled={disputeBusyId === modalJob._id}
+                    className={`inline-flex items-center gap-2 rounded px-4 py-2 text-white hover:opacity-95 disabled:cursor-not-allowed disabled:opacity-60 ${
+                      getDisputeIdFromJob(modalJob) || modalJob.hasDispute
+                        ? "bg-purple-600"
+                        : "bg-amber-500"
+                    }`}
+                  >
+                    <FaExclamationTriangle />
+                    {renderDisputeButtonLabel(modalJob)}
+                  </button>
                 </div>
               </div>
             )}
           </div>
         </div>
       )}
+
+      {disputeJob && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50 p-4 backdrop-blur-sm">
+          <div className="relative w-full max-w-lg rounded-2xl bg-white p-6 shadow-2xl">
+            <button
+              className="absolute right-4 top-4 text-gray-400 transition hover:text-gray-700 disabled:cursor-not-allowed disabled:opacity-60"
+              onClick={resetDisputeModal}
+              disabled={disputeBusyId === disputeJob._id}
+            >
+              <FaTimes />
+            </button>
+
+            <h2 className="text-xl font-bold text-gray-900">Raise a Dispute</h2>
+            <p className="mt-1 text-sm text-gray-500">
+              Select the category and describe the issue clearly.
+            </p>
+
+            <div className="mt-5 space-y-4">
+              <div>
+                <FieldLabel label="Category" />
+                <select
+                  value={disputeData.category}
+                  onChange={(e) =>
+                    setDisputeData((prev) => ({
+                      ...prev,
+                      category: e.target.value,
+                    }))
+                  }
+                  className="w-full rounded-xl border border-gray-200 bg-white px-3 py-2 outline-none transition focus:border-amber-500 focus:ring-2 focus:ring-amber-100"
+                  disabled={disputeBusyId === disputeJob._id}
+                >
+                  <option value="">Select category</option>
+                  {DISPUTE_OPTIONS.map((option) => (
+                    <option key={option.value} value={option.value}>
+                      {option.label}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <FieldLabel label="Description" />
+                <textarea
+                  value={disputeData.issue}
+                  onChange={(e) =>
+                    setDisputeData((prev) => ({
+                      ...prev,
+                      issue: e.target.value,
+                    }))
+                  }
+                  placeholder="Describe what happened..."
+                  rows={5}
+                  className="w-full rounded-xl border border-gray-200 bg-white px-3 py-2 outline-none transition placeholder:text-gray-400 focus:border-amber-500 focus:ring-2 focus:ring-amber-100"
+                  disabled={disputeBusyId === disputeJob._id}
+                />
+              </div>
+
+              <div className="rounded-2xl border border-gray-200 bg-gray-50 p-4">
+                <p className="text-sm font-semibold text-gray-900">
+                  Service and parties involved
+                </p>
+                <div className="mt-3 space-y-2 text-sm text-gray-700">
+                  <p>
+                    <span className="font-medium text-gray-900">Service:</span>{" "}
+                    {disputeServiceName}
+                  </p>
+                  <p>
+                    <span className="font-medium text-gray-900">Provider:</span>{" "}
+                    {disputeProviderName}
+                  </p>
+                  <p>
+                    <span className="font-medium text-gray-900">Customer:</span>{" "}
+                    {disputeCustomerName}
+                  </p>
+                </div>
+              </div>
+
+              <button
+                className="w-full rounded-xl bg-amber-600 px-4 py-2.5 font-medium text-white shadow-sm transition hover:bg-amber-700 disabled:cursor-not-allowed disabled:opacity-60"
+                onClick={submitDispute}
+                disabled={disputeBusyId === disputeJob._id}
+              >
+                {disputeBusyId === disputeJob._id
+                  ? "Submitting..."
+                  : "Submit Dispute"}
+              </button>
+
+              <button
+                className="w-full rounded-xl border border-gray-200 bg-white px-4 py-2.5 font-medium text-gray-700 transition hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-60"
+                onClick={resetDisputeModal}
+                disabled={disputeBusyId === disputeJob._id}
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
+
+/* ---------- UI HELPERS ---------- */
+
+const FieldLabel = ({ label }) => (
+  <label className="mb-1 block text-sm font-medium text-gray-700">{label}</label>
+);

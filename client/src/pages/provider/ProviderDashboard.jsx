@@ -11,6 +11,7 @@ import {
   FaTimes,
   FaRedoAlt,
   FaCheckCircle,
+  FaEye,
 } from "react-icons/fa";
 import {
   LineChart,
@@ -50,10 +51,48 @@ function formatMonthLabel(dateString) {
   return date.toLocaleString("default", { month: "short" });
 }
 
+function normalize(value) {
+  return String(value || "").trim().toLowerCase();
+}
+
+function getDisputeCategoryLabel(category) {
+  const map = {
+    no_show: "No show",
+    poor_quality: "Poor quality",
+    scope_mismatch: "Scope mismatch",
+    payment_issue: "Payment issue",
+    damage: "Damage",
+    other: "Other",
+  };
+  return map[normalize(category)] || category || "Unspecified";
+}
+
+function getDisputeStatusLabel(status) {
+  const s = normalize(status);
+  if (s === "responded") return "Responded";
+  if (s === "in_review") return "In review";
+  if (s === "under_review") return "Under review";
+  if (s === "resolved") return "Resolved";
+  if (s === "closed") return "Closed";
+  if (s === "rejected") return "Rejected";
+  return "Open";
+}
+
+function getDisputeText(dispute) {
+  return (
+    dispute?.description ||
+    dispute?.issue ||
+    dispute?.message ||
+    dispute?.reason ||
+    "No description provided"
+  );
+}
+
 export default function ProviderDashboard() {
   const { user, token } = useAuth();
 
   const [jobs, setJobs] = useState([]);
+  const [disputes, setDisputes] = useState([]);
   const [chartData, setChartData] = useState([]);
   const [chartView, setChartView] = useState("jobs");
   const [modal, setModal] = useState(null);
@@ -76,6 +115,11 @@ export default function ProviderDashboard() {
         value: "KSh 0",
         icon: <FaMoneyBillWave className="text-white w-6 h-6" />,
       },
+      {
+        title: "Disputes",
+        value: 0,
+        icon: <FaExclamationTriangle className="text-white w-6 h-6" />,
+      },
     ],
     []
   );
@@ -93,9 +137,10 @@ export default function ProviderDashboard() {
         Authorization: `Bearer ${token}`,
       };
 
-      const [providerRes, jobsRes] = await Promise.all([
+      const [providerRes, jobsRes, disputesRes] = await Promise.all([
         fetch(apiUrl("/providers/me"), { headers }),
         fetch(apiUrl("/bookings/provider"), { headers }),
+        fetch(apiUrl("/disputes/my"), { headers }),
       ]);
 
       if (!providerRes.ok) {
@@ -108,8 +153,14 @@ export default function ProviderDashboard() {
         throw new Error(data?.message || "Failed to load bookings");
       }
 
+      if (!disputesRes.ok) {
+        const data = await disputesRes.json().catch(() => ({}));
+        throw new Error(data?.message || "Failed to load disputes");
+      }
+
       const providerData = await providerRes.json();
       const jobsData = await jobsRes.json();
+      const disputesData = await disputesRes.json();
 
       const status = providerData?.status || "pending";
       const banner =
@@ -123,19 +174,21 @@ export default function ProviderDashboard() {
       setProviderBanner(banner);
       setRejectionReason(providerData?.rejectionReason || "");
       setJobs(Array.isArray(jobsData?.bookings) ? jobsData.bookings : []);
+      setDisputes(Array.isArray(disputesData) ? disputesData : []);
 
       const bookings = Array.isArray(jobsData?.bookings) ? jobsData.bookings : [];
       const totalJobs = bookings.length;
-      const pendingJobs = bookings.filter((j) => j.status === "pending").length;
-      const completedJobs = bookings.filter((j) => j.status === "completed");
-      const totalEarnings = completedJobs.reduce(
-        (sum, j) => sum + (Number(j.price) || 0),
-        0
-      );
+      const pendingJobs = bookings.filter((j) => normalize(j.status) === "pending").length;
+      const completedJobs = bookings.filter((j) => normalize(j.status) === "completed");
+      const totalEarnings = completedJobs.reduce((sum, j) => sum + (Number(j.price) || 0), 0);
       const uniqueCustomers = new Set(
         bookings.map((j) => j?.customer?._id).filter(Boolean)
       ).size;
       const rating = Number(providerData?.rating || 0);
+      const activeDisputes = (Array.isArray(disputesData) ? disputesData : []).filter((d) => {
+        const s = normalize(d?.status);
+        return ["open", "responded", "in_review", "under_review"].includes(s);
+      }).length;
 
       setComputedStats(
         baseStats.map((s) => {
@@ -144,6 +197,7 @@ export default function ProviderDashboard() {
           if (s.title === "Customers Served") return { ...s, value: uniqueCustomers };
           if (s.title === "Rating") return { ...s, value: rating.toFixed(1) };
           if (s.title === "Earnings") return { ...s, value: formatKES(totalEarnings) };
+          if (s.title === "Disputes") return { ...s, value: activeDisputes };
           return s;
         })
       );
@@ -157,7 +211,7 @@ export default function ProviderDashboard() {
 
         monthlyMap[month].jobs += 1;
 
-        if (b.status === "completed") {
+        if (normalize(b.status) === "completed") {
           monthlyMap[month].earnings += Number(b.price) || 0;
         }
       });
@@ -217,6 +271,11 @@ export default function ProviderDashboard() {
       : "bg-blue-100 border-blue-400 text-blue-700";
 
   const canManageServices = providerStatus === "approved";
+
+  const unresolvedDisputes = disputes.filter((d) => {
+    const s = normalize(d?.status);
+    return ["open", "responded", "in_review", "under_review"].includes(s);
+  });
 
   if (loading) {
     return (
@@ -337,7 +396,7 @@ export default function ProviderDashboard() {
         </ResponsiveContainer>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         <div
           onClick={() => {
             if (canManageServices) setModal("services");
@@ -360,6 +419,18 @@ export default function ProviderDashboard() {
         >
           <h3 className="text-lg font-semibold mb-2">View Jobs</h3>
           <p className="text-gray-600 text-sm">View all assigned jobs.</p>
+        </div>
+
+        <div
+          onClick={() => setModal("disputes")}
+          className="p-6 bg-white shadow-md rounded-lg border hover:shadow-lg cursor-pointer"
+        >
+          <h3 className="text-lg font-semibold mb-2">View Disputes</h3>
+          <p className="text-gray-600 text-sm">Review unresolved disputes and follow up.</p>
+          <div className="mt-3 inline-flex items-center gap-2 rounded-full bg-rose-50 px-3 py-1 text-xs font-semibold text-rose-700">
+            <FaExclamationTriangle />
+            {unresolvedDisputes.length} open dispute(s)
+          </div>
         </div>
       </div>
 
@@ -402,6 +473,73 @@ export default function ProviderDashboard() {
                   )}
                 </tbody>
               </table>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {modal === "disputes" && (
+        <div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4">
+          <div className="bg-white w-full max-w-5xl rounded-2xl shadow-2xl p-6 relative max-h-[90vh] overflow-y-auto">
+            <button onClick={() => setModal(null)} className="absolute top-4 right-4">
+              <FaTimes />
+            </button>
+
+            <div className="flex items-center gap-3 mb-4">
+              <div className="rounded-full bg-rose-100 p-3 text-rose-600">
+                <FaExclamationTriangle />
+              </div>
+              <div>
+                <h2 className="text-xl font-semibold text-gray-900">Your Disputes</h2>
+                <p className="text-sm text-gray-500">Open and in-review disputes need attention.</p>
+              </div>
+            </div>
+
+            <div className="space-y-3">
+              {disputes.length === 0 ? (
+                <div className="rounded-xl border bg-gray-50 p-4 text-sm text-gray-500">
+                  No disputes found.
+                </div>
+              ) : (
+                disputes.map((item) => {
+                  const isActive = ["open", "responded", "in_review", "under_review"].includes(
+                    normalize(item?.status)
+                  );
+
+                  return (
+                    <div key={item._id} className="rounded-2xl border bg-gray-50 p-4">
+                      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                        <div className="min-w-0">
+                          <div className="flex flex-wrap items-center gap-2">
+                            <span className="inline-flex items-center rounded-full bg-rose-100 px-3 py-1 text-xs font-semibold text-rose-700">
+                              Dispute
+                            </span>
+                            <span className="inline-flex items-center rounded-full bg-gray-100 px-3 py-1 text-xs font-semibold text-gray-700">
+                              {getDisputeStatusLabel(item?.status)}
+                            </span>
+                          </div>
+
+                          <p className="mt-2 font-semibold text-gray-900">
+                            {getDisputeCategoryLabel(item?.category)}
+                          </p>
+                          <p className="mt-1 text-sm text-gray-600">{getDisputeText(item)}</p>
+                          <p className="mt-2 text-xs text-gray-500">
+                            {item?.openedByName || item?.openedBy?.name || "Customer"} vs {" "}
+                            {item?.againstName || item?.against?.name || "Provider"}
+                          </p>
+                        </div>
+
+                        <div className="shrink-0 text-sm text-gray-500 sm:text-right">
+                          <p>{item?.createdAt ? new Date(item.createdAt).toLocaleString() : "-"}</p>
+                          <p className="mt-1 text-xs font-semibold uppercase tracking-wide text-gray-500">
+                            {isActive ? "Requires review" : "Closed"}
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })
+              )}
             </div>
           </div>
         </div>
@@ -470,8 +608,7 @@ export default function ProviderDashboard() {
 
             <h2 className="text-xl font-semibold text-gray-900">Manage Services</h2>
             <p className="mt-2 text-sm text-gray-600">
-              This section is available for approved providers. You can connect your services form
-              here.
+              This section is available for approved providers. You can connect your services form here.
             </p>
 
             {!canManageServices && (

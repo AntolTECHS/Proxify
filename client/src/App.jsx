@@ -1,6 +1,7 @@
 // src/App.jsx
 import { Routes, Route, Navigate } from "react-router-dom";
 import ProtectedRoute from "./components/ProtectedRoute.jsx";
+import DisputeAccessGuard from "./components/guards/DisputeAccessGuard.jsx";
 
 /* Layouts */
 import ProviderLayout from "./layouts/ProviderLayout.jsx";
@@ -29,12 +30,17 @@ import CustomerBookings from "./pages/Customer/CustomerBookings.jsx";
 import CustomerProviders from "./pages/Customer/CustomerProviders.jsx";
 import CustomerProfile from "./pages/Customer/CustomerProfile.jsx";
 
+/* Disputes */
+import Disputes from "./pages/Disputes.jsx";
+import DisputeDetail from "./pages/DisputeDetail.jsx";
+
 /* Admin Pages */
 import AdminDashboard from "./pages/Admin/AdminDashboard.jsx";
 import AdminUsers from "./pages/Admin/AdminUsers.jsx";
 import AdminProviders from "./pages/Admin/AdminProviders.jsx";
 import AdminBookings from "./pages/Admin/AdminBookings.jsx";
 import AdminProfile from "./pages/Admin/AdminProfile.jsx";
+import AdminDisputes from "./pages/Admin/AdminDisputes.jsx";
 
 export default function App() {
   return (
@@ -48,7 +54,14 @@ export default function App() {
       <Route path="/register" element={<Register />} />
 
       {/* ---------- LEGACY / SAFETY REDIRECTS ---------- */}
-      <Route path="/admin/panel" element={<Navigate to="/admin/dashboard" replace />} />
+      <Route
+        path="/admin/panel"
+        element={<Navigate to="/admin/dashboard" replace />}
+      />
+      <Route
+        path="/disputes"
+        element={<Navigate to="/customer/disputes" replace />}
+      />
 
       {/* ---------- BECOME PROVIDER ---------- */}
       <Route
@@ -84,6 +97,23 @@ export default function App() {
         <Route path="community" element={<ProviderCommunity />} />
         <Route path="settings" element={<ProviderSettings />} />
         <Route path="pending" element={<ProviderPending />} />
+
+        <Route
+          path="disputes"
+          element={
+            <DisputeAccessGuard>
+              <Disputes />
+            </DisputeAccessGuard>
+          }
+        />
+        <Route
+          path="disputes/:id"
+          element={
+            <DisputeAccessGuard>
+              <DisputeDetail />
+            </DisputeAccessGuard>
+          }
+        />
       </Route>
 
       {/* ---------- CUSTOMER ---------- */}
@@ -100,6 +130,23 @@ export default function App() {
         <Route path="bookings" element={<CustomerBookings />} />
         <Route path="providers" element={<CustomerProviders />} />
         <Route path="profile" element={<CustomerProfile />} />
+
+        <Route
+          path="disputes"
+          element={
+            <DisputeAccessGuard>
+              <Disputes />
+            </DisputeAccessGuard>
+          }
+        />
+        <Route
+          path="disputes/:id"
+          element={
+            <DisputeAccessGuard>
+              <DisputeDetail />
+            </DisputeAccessGuard>
+          }
+        />
       </Route>
 
       {/* ---------- ADMIN ---------- */}
@@ -117,6 +164,9 @@ export default function App() {
         <Route path="providers" element={<AdminProviders />} />
         <Route path="bookings" element={<AdminBookings />} />
         <Route path="profile" element={<AdminProfile />} />
+
+        <Route path="disputes" element={<AdminDisputes />} />
+        <Route path="disputes/:id" element={<DisputeDetail />} />
       </Route>
 
       {/* ---------- FALLBACK ---------- */}

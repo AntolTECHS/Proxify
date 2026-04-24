@@ -9,15 +9,31 @@ import {
   FaInfoCircle,
   FaFilter,
   FaSearch,
+  FaExclamationTriangle,
+  FaComments,
 } from "react-icons/fa";
+import { useNavigate } from "react-router-dom";
 import { useAuth } from "../../context/AuthContext.jsx";
+import { createDispute } from "../../api/disputeApi.js";
+import Chat from "../../components/Chat/Chat.jsx";
 
 const API_URL = import.meta.env.VITE_API_URL || "http://localhost:5000/api";
 const FILTERS = ["All", "Upcoming", "Completed", "Cancelled"];
 const PAGE_SIZE = 7;
 
+const DISPUTE_OPTIONS = [
+  { value: "no_show", label: "Provider did not show up" },
+  { value: "poor_quality", label: "Poor service quality" },
+  { value: "scope_mismatch", label: "Scope mismatch" },
+  { value: "payment_issue", label: "Payment issue" },
+  { value: "damage", label: "Damage or loss" },
+  { value: "other", label: "Other" },
+];
+
 export default function CustomerBookings() {
   const { user, token } = useAuth();
+  const navigate = useNavigate();
+
   const [bookings, setBookings] = useState([]);
   const [filter, setFilter] = useState("All");
   const [loading, setLoading] = useState(true);
@@ -27,6 +43,15 @@ export default function CustomerBookings() {
   const [selectedBooking, setSelectedBooking] = useState(null);
   const [rescheduleBooking, setRescheduleBooking] = useState(null);
   const [rescheduleData, setRescheduleData] = useState({ date: "", time: "" });
+
+  const [disputeBooking, setDisputeBooking] = useState(null);
+  const [disputeData, setDisputeData] = useState({
+    category: "",
+    issue: "",
+  });
+  const [disputeBusyId, setDisputeBusyId] = useState(null);
+
+  const [chatBooking, setChatBooking] = useState(null);
 
   useEffect(() => {
     if (!user || !token) return;
@@ -67,7 +92,7 @@ export default function CustomerBookings() {
         (filter === "Completed" && isCompleted) ||
         (filter === "Cancelled" && isCancelled);
 
-      const serviceName = (b.serviceName || b.service?.name || "").toLowerCase();
+      const serviceName = (b.serviceName || "").toLowerCase();
       const providerName = (
         b.provider?.basicInfo?.providerName || b.providerName || ""
       ).toLowerCase();
@@ -94,6 +119,19 @@ export default function CustomerBookings() {
     const start = (currentPage - 1) * PAGE_SIZE;
     return filteredBookings.slice(start, start + PAGE_SIZE);
   }, [filteredBookings, currentPage]);
+
+  const resetDisputeModal = () => {
+    setDisputeBooking(null);
+    setDisputeData({ category: "", issue: "" });
+  };
+
+  const openChat = (booking) => {
+    setChatBooking(booking);
+  };
+
+  const closeChat = () => {
+    setChatBooking(null);
+  };
 
   const handleCancel = async (bookingId) => {
     if (!window.confirm("Are you sure you want to cancel this booking?")) return;
@@ -163,6 +201,75 @@ export default function CustomerBookings() {
     }
   };
 
+  const openDisputeFromBooking = (booking) => {
+    const hasExistingDispute = Boolean(booking.disputeId || booking.dispute?._id);
+
+    if (hasExistingDispute) {
+      const disputeId =
+        booking.disputeId?._id || booking.disputeId || booking.dispute?._id;
+      navigate(`/customer/disputes/${disputeId}`);
+      return;
+    }
+
+    setDisputeBooking(booking);
+    setDisputeData({
+      category: "",
+      issue: "",
+    });
+  };
+
+  const submitDispute = async () => {
+    if (!disputeBooking) return;
+
+    if (!disputeData.category) {
+      alert("Please select a reason for the dispute.");
+      return;
+    }
+
+    if (!disputeData.issue.trim()) {
+      alert("Please describe the issue.");
+      return;
+    }
+
+    const serviceName = disputeBooking.serviceName || "Booking";
+    const providerName =
+      disputeBooking.provider?.basicInfo?.providerName ||
+      disputeBooking.providerName ||
+      "Provider";
+    const customerName = user?.name || "Customer";
+
+    const fullDescription = `Service: ${serviceName}
+Customer: ${customerName}
+Provider: ${providerName}
+
+Issue: ${disputeData.issue.trim()}`;
+
+    setDisputeBusyId(disputeBooking._id);
+
+    try {
+      const dispute = await createDispute({
+        jobId: disputeBooking._id,
+        category: disputeData.category,
+        description: fullDescription,
+      });
+
+      resetDisputeModal();
+      navigate(`/customer/disputes/${dispute._id}`);
+    } catch (err) {
+      console.error("Open dispute error:", err);
+      alert(err?.response?.data?.message || err.message || "Failed to open dispute");
+    } finally {
+      setDisputeBusyId(null);
+    }
+  };
+
+  const disputeServiceName = disputeBooking?.serviceName || "Service";
+  const disputeProviderName =
+    disputeBooking?.provider?.basicInfo?.providerName ||
+    disputeBooking?.providerName ||
+    "Provider";
+  const disputeCustomerName = user?.name || "Customer";
+
   if (loading) {
     return (
       <div className="flex min-h-[60vh] items-center justify-center">
@@ -176,17 +283,13 @@ export default function CustomerBookings() {
   return (
     <div className="w-full px-2 py-3 sm:px-3 lg:px-4 xl:px-5">
       <div className="space-y-5">
-        {/* HEADER */}
         <div className="rounded-[26px] border border-teal-200 bg-gradient-to-r from-teal-600 via-cyan-600 to-sky-600 p-5 shadow-lg">
-          <h1 className="text-3xl font-bold tracking-tight text-white">
-            Your Bookings
-          </h1>
+          <h1 className="text-3xl font-bold tracking-tight text-white">Your Bookings</h1>
           <p className="mt-1 text-sm text-teal-50 sm:text-base">
-            View, reschedule, cancel, and track all your bookings in one place.
+            View, reschedule, cancel, dispute, and track all your bookings in one place.
           </p>
         </div>
 
-        {/* CONTROLS */}
         <div className="grid gap-4 rounded-[22px] border border-slate-200 bg-white p-4 shadow-sm lg:grid-cols-[1fr_auto] lg:items-center">
           <div className="flex flex-wrap gap-2">
             {FILTERS.map((f) => {
@@ -228,7 +331,6 @@ export default function CustomerBookings() {
           </div>
         </div>
 
-        {/* DESKTOP TABLE */}
         <div className="hidden overflow-hidden rounded-[24px] border border-slate-200 bg-white shadow-sm lg:block">
           <div className="overflow-x-auto">
             <table className="min-w-full border-collapse">
@@ -249,9 +351,7 @@ export default function CustomerBookings() {
                   <tr className="border-b border-slate-200">
                     <td colSpan={7} className="px-5 py-16 text-center">
                       <div className="mx-auto max-w-md rounded-2xl border border-dashed border-slate-300 bg-slate-50 px-6 py-10">
-                        <p className="text-base font-semibold text-slate-700">
-                          No bookings found
-                        </p>
+                        <p className="text-base font-semibold text-slate-700">No bookings found</p>
                         <p className="mt-1 text-sm text-slate-500">
                           Try a different filter or search term.
                         </p>
@@ -266,6 +366,10 @@ export default function CustomerBookings() {
                         String(b.status).toLowerCase()
                       ) && bookingDate > new Date();
 
+                    const disputeId =
+                      b.disputeId?._id || b.disputeId || b.dispute?._id || null;
+                    const hasDispute = Boolean(disputeId);
+
                     return (
                       <tr
                         key={b._id}
@@ -274,7 +378,7 @@ export default function CustomerBookings() {
                         <td className="px-5 py-4 align-top">
                           <div className="max-w-[220px]">
                             <div className="truncate font-semibold text-slate-900">
-                              {b.serviceName || b.service?.name}
+                              {b.serviceName}
                             </div>
                             <div className="mt-1 truncate text-sm text-slate-500">
                               {b.notes || "No notes"}
@@ -315,19 +419,38 @@ export default function CustomerBookings() {
                         </td>
 
                         <td className="px-5 py-4 align-top text-sm font-semibold text-slate-900">
-                          {typeof b.price === "number"
-                            ? `Ksh ${b.price.toFixed(2)}`
-                            : "N/A"}
+                          {typeof b.price === "number" ? `Ksh ${b.price.toFixed(2)}` : "N/A"}
                         </td>
 
                         <td className="px-5 py-4 align-top">
-                          <div className="flex justify-end gap-2">
+                          <div className="flex flex-wrap justify-end gap-2">
                             <button
                               onClick={() => setSelectedBooking(b)}
                               className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700 transition hover:border-teal-200 hover:bg-teal-50 hover:text-teal-700"
                             >
                               <FaInfoCircle />
                               Details
+                            </button>
+
+                            <button
+                              onClick={() => openChat(b)}
+                              className="inline-flex items-center gap-2 rounded-xl border border-sky-200 bg-sky-50 px-3 py-2 text-sm font-medium text-sky-700 transition hover:bg-sky-100"
+                            >
+                              <FaComments />
+                              Chat
+                            </button>
+
+                            <button
+                              onClick={() => openDisputeFromBooking(b)}
+                              disabled={disputeBusyId === b._id}
+                              className="inline-flex items-center gap-2 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-sm font-medium text-amber-700 transition hover:bg-amber-100 disabled:cursor-not-allowed disabled:opacity-60"
+                            >
+                              <FaExclamationTriangle />
+                              {hasDispute
+                                ? "View Dispute"
+                                : disputeBusyId === b._id
+                                ? "Opening..."
+                                : "Raise Dispute"}
                             </button>
 
                             {isUpcoming && (
@@ -358,7 +481,6 @@ export default function CustomerBookings() {
             </table>
           </div>
 
-          {/* PAGINATION */}
           {filteredBookings.length > 0 && (
             <div className="flex items-center justify-between border-t border-slate-200 px-5 py-4">
               <p className="text-sm text-slate-600">
@@ -371,9 +493,7 @@ export default function CustomerBookings() {
                   {Math.min(currentPage * PAGE_SIZE, filteredBookings.length)}
                 </span>{" "}
                 of{" "}
-                <span className="font-semibold text-slate-900">
-                  {filteredBookings.length}
-                </span>{" "}
+                <span className="font-semibold text-slate-900">{filteredBookings.length}</span>{" "}
                 bookings
               </p>
 
@@ -400,7 +520,6 @@ export default function CustomerBookings() {
           )}
         </div>
 
-        {/* MOBILE CARDS */}
         <div className="grid gap-4 lg:hidden">
           {paginatedBookings.length === 0 ? (
             <div className="rounded-[24px] border border-dashed border-slate-300 bg-white p-8 text-center shadow-sm">
@@ -417,6 +536,10 @@ export default function CustomerBookings() {
                   String(b.status).toLowerCase()
                 ) && bookingDate > new Date();
 
+              const disputeId =
+                b.disputeId?._id || b.disputeId || b.dispute?._id || null;
+              const hasDispute = Boolean(disputeId);
+
               return (
                 <div
                   key={b._id}
@@ -424,9 +547,7 @@ export default function CustomerBookings() {
                 >
                   <div className="flex items-start justify-between gap-3">
                     <div>
-                      <h3 className="text-lg font-bold text-slate-900">
-                        {b.serviceName || b.service?.name}
-                      </h3>
+                      <h3 className="text-lg font-bold text-slate-900">{b.serviceName}</h3>
                       <p className="mt-1 flex items-center gap-2 text-sm text-slate-600">
                         <FaUser className="text-teal-600" />
                         {b.provider?.basicInfo?.providerName || b.providerName}
@@ -451,11 +572,7 @@ export default function CustomerBookings() {
                     />
                     <InfoLine
                       label="Price"
-                      value={
-                        typeof b.price === "number"
-                          ? `Ksh ${b.price.toFixed(2)}`
-                          : "N/A"
-                      }
+                      value={typeof b.price === "number" ? `Ksh ${b.price.toFixed(2)}` : "N/A"}
                     />
                     <InfoLine label="Notes" value={b.notes || "No notes"} />
                   </div>
@@ -467,6 +584,27 @@ export default function CustomerBookings() {
                     >
                       <FaInfoCircle />
                       Details
+                    </button>
+
+                    <button
+                      onClick={() => openChat(b)}
+                      className="inline-flex items-center gap-2 rounded-xl border border-sky-200 bg-sky-50 px-4 py-2 text-sm font-medium text-sky-700 transition hover:bg-sky-100"
+                    >
+                      <FaComments />
+                      Chat
+                    </button>
+
+                    <button
+                      onClick={() => openDisputeFromBooking(b)}
+                      disabled={disputeBusyId === b._id}
+                      className="inline-flex items-center gap-2 rounded-xl border border-amber-200 bg-amber-50 px-4 py-2 text-sm font-medium text-amber-700 transition hover:bg-amber-100 disabled:cursor-not-allowed disabled:opacity-60"
+                    >
+                      <FaExclamationTriangle />
+                      {hasDispute
+                        ? "View Dispute"
+                        : disputeBusyId === b._id
+                        ? "Opening..."
+                        : "Raise Dispute"}
                     </button>
 
                     {isUpcoming && (
@@ -517,7 +655,6 @@ export default function CustomerBookings() {
         </div>
       </div>
 
-      {/* RESCHEDULE MODAL */}
       {rescheduleBooking && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/55 p-4 backdrop-blur-sm">
           <div className="relative w-full max-w-md rounded-[28px] bg-white p-6 shadow-2xl">
@@ -529,9 +666,7 @@ export default function CustomerBookings() {
             </button>
 
             <h2 className="text-xl font-bold text-slate-900">Reschedule Booking</h2>
-            <p className="mt-1 text-sm text-slate-500">
-              {rescheduleBooking.serviceName || rescheduleBooking.service?.name}
-            </p>
+            <p className="mt-1 text-sm text-slate-500">{rescheduleBooking.serviceName}</p>
 
             <div className="mt-5 space-y-4">
               <FieldLabel label="New date" />
@@ -565,14 +700,104 @@ export default function CustomerBookings() {
         </div>
       )}
 
-      {/* BOOKING DETAILS DRAWER */}
+      {disputeBooking && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/55 p-4 backdrop-blur-sm">
+          <div className="relative w-full max-w-lg rounded-[28px] bg-white p-6 shadow-2xl">
+            <button
+              className="absolute right-4 top-4 text-slate-400 transition hover:text-slate-700"
+              onClick={resetDisputeModal}
+              disabled={disputeBusyId === disputeBooking._id}
+            >
+              <FaTimes />
+            </button>
+
+            <h2 className="text-xl font-bold text-slate-900">Raise a Dispute</h2>
+            <p className="mt-1 text-sm text-slate-500">
+              Choose a category from the schema, then describe the issue.
+            </p>
+
+            <div className="mt-5 space-y-4">
+              <div>
+                <FieldLabel label="Category" />
+                <select
+                  value={disputeData.category}
+                  onChange={(e) =>
+                    setDisputeData((prev) => ({
+                      ...prev,
+                      category: e.target.value,
+                    }))
+                  }
+                  className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 outline-none transition focus:border-teal-500 focus:ring-2 focus:ring-teal-100"
+                  disabled={disputeBusyId === disputeBooking._id}
+                >
+                  <option value="">Select category</option>
+                  {DISPUTE_OPTIONS.map((option) => (
+                    <option key={option.value} value={option.value}>
+                      {option.label}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <FieldLabel label="Description" />
+                <textarea
+                  value={disputeData.issue}
+                  onChange={(e) =>
+                    setDisputeData((prev) => ({
+                      ...prev,
+                      issue: e.target.value,
+                    }))
+                  }
+                  placeholder="Describe what happened..."
+                  rows={5}
+                  className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 outline-none transition placeholder:text-slate-400 focus:border-teal-500 focus:ring-2 focus:ring-teal-100"
+                  disabled={disputeBusyId === disputeBooking._id}
+                />
+              </div>
+
+              <div className="rounded-[22px] border border-slate-200 bg-slate-50 p-4">
+                <p className="text-sm font-semibold text-slate-900">Service and parties involved</p>
+                <div className="mt-3 space-y-2 text-sm text-slate-700">
+                  <p>
+                    <span className="font-medium text-slate-900">Service:</span> {disputeServiceName}
+                  </p>
+                  <p>
+                    <span className="font-medium text-slate-900">Customer:</span> {disputeCustomerName}
+                  </p>
+                  <p>
+                    <span className="font-medium text-slate-900">Provider:</span> {disputeProviderName}
+                  </p>
+                </div>
+              </div>
+
+              <button
+                className="w-full rounded-xl bg-amber-600 px-4 py-2.5 font-medium text-white shadow-sm transition hover:bg-amber-700 disabled:cursor-not-allowed disabled:opacity-60"
+                onClick={submitDispute}
+                disabled={disputeBusyId === disputeBooking._id}
+              >
+                {disputeBusyId === disputeBooking._id ? "Submitting..." : "Submit Dispute"}
+              </button>
+
+              <button
+                className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 font-medium text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
+                onClick={resetDisputeModal}
+                disabled={disputeBusyId === disputeBooking._id}
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {selectedBooking && (
         <div className="fixed inset-0 z-40 flex">
           <div
             className="absolute inset-0 bg-slate-950/45 backdrop-blur-[2px]"
             onClick={() => setSelectedBooking(null)}
           />
-          <div className="relative ml-auto flex h-full w-full max-w-md flex-col overflow-y-auto bg-white shadow-2xl">
+          <div className="relative ml-auto flex h-full w-full max-w-2xl flex-col overflow-y-auto bg-white shadow-2xl">
             <div className="sticky top-0 border-b border-slate-200 bg-white px-6 py-4">
               <button
                 className="absolute right-4 top-4 text-slate-400 transition hover:text-slate-700"
@@ -580,19 +805,16 @@ export default function CustomerBookings() {
               >
                 <FaTimes />
               </button>
-              <h2 className="pr-8 text-xl font-bold text-slate-900">
-                Booking Details
-              </h2>
+              <h2 className="pr-8 text-xl font-bold text-slate-900">Booking Details</h2>
             </div>
 
             <div className="space-y-4 px-6 py-6">
               <div className="rounded-[22px] bg-gradient-to-r from-teal-50 to-cyan-50 p-4">
                 <h3 className="text-lg font-semibold text-slate-900">
-                  {selectedBooking.serviceName || selectedBooking.service?.name}
+                  {selectedBooking.serviceName}
                 </h3>
                 <p className="mt-1 text-sm text-slate-600">
-                  {selectedBooking.provider?.basicInfo?.providerName ||
-                    selectedBooking.providerName}
+                  {selectedBooking.provider?.basicInfo?.providerName || selectedBooking.providerName}
                 </p>
               </div>
 
@@ -617,15 +839,51 @@ export default function CustomerBookings() {
                     : "N/A"
                 }
               />
+
+              <div className="rounded-[22px] border border-slate-200 bg-slate-50 p-4">
+                <div className="flex items-center justify-between gap-3">
+                  <h3 className="text-base font-semibold text-slate-900">Chat section</h3>
+                  <button
+                    onClick={() => openChat(selectedBooking)}
+                    className="inline-flex items-center gap-2 rounded-xl border border-sky-200 bg-sky-50 px-3 py-2 text-sm font-medium text-sky-700 transition hover:bg-sky-100"
+                  >
+                    <FaComments />
+                    Open chat
+                  </button>
+                </div>
+                <p className="mt-2 text-sm text-slate-600">
+                  Use this booking chat to speak with the provider about timing, updates, and support.
+                </p>
+              </div>
+
+              <button
+                onClick={() => openDisputeFromBooking(selectedBooking)}
+                disabled={disputeBusyId === selectedBooking._id}
+                className="inline-flex w-full items-center justify-center gap-2 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm font-semibold text-amber-700 transition hover:bg-amber-100 disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                <FaExclamationTriangle />
+                {selectedBooking.disputeId || selectedBooking.dispute?._id
+                  ? "View Dispute"
+                  : disputeBusyId === selectedBooking._id
+                  ? "Opening..."
+                  : "Raise Dispute"}
+              </button>
             </div>
           </div>
         </div>
       )}
+
+      {chatBooking && (
+        <ChatBookingModal
+          booking={chatBooking}
+          token={token}
+          userId={user?._id || user?.id}
+          onClose={closeChat}
+        />
+      )}
     </div>
   );
 }
-
-/* ---------- UI HELPERS ---------- */
 
 const Th = ({ children, align = "left" }) => {
   const alignClass = align === "right" ? "text-right" : "text-left";
@@ -680,3 +938,39 @@ const DetailRow = ({ label, value }) => (
     <span className="text-right text-sm font-semibold text-slate-900">{value}</span>
   </div>
 );
+
+const ChatBookingModal = ({ booking, token, userId, onClose }) => {
+  const providerName =
+    booking?.provider?.basicInfo?.providerName || booking?.providerName || "Provider";
+
+  return (
+    <div className="fixed inset-0 z-[60] bg-black/45 p-0 sm:p-4">
+      <div className="flex h-[100dvh] w-full flex-col overflow-hidden bg-white shadow-2xl sm:mx-auto sm:h-[85vh] sm:w-11/12 sm:max-w-5xl sm:rounded-2xl">
+        <div className="flex shrink-0 items-center justify-between border-b px-4 py-3 sm:px-6 sm:py-4">
+          <div className="min-w-0">
+            <h2 className="truncate text-base font-bold text-teal-600 sm:text-lg">
+              Chat with {providerName}
+            </h2>
+            {booking?.serviceName && (
+              <p className="truncate text-xs text-gray-500 sm:text-sm">{booking.serviceName}</p>
+            )}
+          </div>
+
+          <button
+            className="ml-4 rounded-full p-2 text-gray-600 hover:bg-gray-100 hover:text-gray-900"
+            onClick={onClose}
+            aria-label="Close chat"
+          >
+            <FaTimes />
+          </button>
+        </div>
+
+        <div className="min-h-0 flex-1 overflow-hidden p-2 sm:p-4">
+          <div className="h-full min-h-0 overflow-hidden rounded-xl border bg-white">
+            <Chat bookingId={booking?._id} token={token} userId={userId} />
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+};

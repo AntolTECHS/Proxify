@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState, useCallback, memo } from "react";
+import { useNavigate } from "react-router-dom";
 import {
   FaUsers,
   FaUserTie,
@@ -25,11 +26,19 @@ import {
 } from "recharts";
 import { useAuth } from "../../context/AuthContext";
 import { adminService } from "../../services/adminService";
+import { getAdminDisputes } from "../../api/disputeApi";
 
 const API_BASE_URL =
   import.meta.env.VITE_API_URL ||
   import.meta.env.VITE_BACKEND_URL ||
   "http://localhost:5000";
+
+const DISPUTE_REVIEW_STATUSES = ["open", "responded", "in_review"];
+
+const normalize = (value) =>
+  String(value || "")
+    .trim()
+    .toLowerCase();
 
 function resolveFileUrl(filePath) {
   if (!filePath) return "";
@@ -160,6 +169,39 @@ function getStatusMeta(status, approvalBanner, rejectionReason) {
     badgeClass: "bg-yellow-100 text-yellow-700 border-yellow-200",
     bannerClass: "bg-yellow-50 text-yellow-700 border-yellow-200",
   };
+}
+
+function getDisputeCategoryLabel(category) {
+  const map = {
+    no_show: "No Show",
+    poor_quality: "Poor Quality",
+    scope_mismatch: "Scope Mismatch",
+    payment_issue: "Payment Issue",
+    damage: "Damage / Loss",
+    other: "Other",
+  };
+  const key = normalize(category);
+  return map[key] || category || "Unspecified";
+}
+
+function getDisputeStatusLabel(status) {
+  const s = normalize(status);
+  if (s === "responded") return "Responded";
+  if (s === "in_review") return "In Review";
+  if (s === "resolved") return "Resolved";
+  if (s === "closed") return "Closed";
+  if (s === "rejected") return "Rejected";
+  return "Open";
+}
+
+function getDisputeText(dispute) {
+  return (
+    dispute?.description ||
+    dispute?.issue ||
+    dispute?.message ||
+    dispute?.reason ||
+    "No description provided"
+  );
 }
 
 function EmptyState({ title, description }) {
@@ -308,10 +350,12 @@ const ProviderCard = memo(function ProviderCard({ provider, onOpen }) {
 
 export default function AdminDashboardPage() {
   const { user, token } = useAuth();
+  const navigate = useNavigate();
 
   const [users, setUsers] = useState([]);
   const [providers, setProviders] = useState([]);
   const [bookings, setBookings] = useState([]);
+  const [disputes, setDisputes] = useState([]);
   const [summary, setSummary] = useState(null);
 
   const [loading, setLoading] = useState(true);
@@ -358,7 +402,7 @@ export default function AdminDashboardPage() {
     }).length;
   }, [providers]);
 
-  const buildAttentionQueue = useCallback((providersList = []) => {
+  const buildAttentionQueue = useCallback((providersList = [], disputesList = []) => {
     const queue = [];
 
     for (const provider of providersList) {
@@ -393,7 +437,26 @@ export default function AdminDashboardPage() {
       }
     }
 
-    return queue;
+    for (const dispute of disputesList) {
+      const status = normalize(dispute?.status);
+      if (!DISPUTE_REVIEW_STATUSES.includes(status)) continue;
+
+      queue.push({
+        id: `dispute-${dispute?._id}`,
+        type: "dispute",
+        title: getDisputeCategoryLabel(dispute?.category),
+        subtitle: `${getDisputeStatusLabel(dispute?.status)} · ${
+          dispute?.serviceName || dispute?.jobId?.serviceName || "Service"
+        }`,
+        detail: getDisputeText(dispute),
+        date: dispute?.createdAt,
+        disputeId: dispute?._id,
+        openedByName: dispute?.openedByName || dispute?.openedBy?.name || "",
+        againstName: dispute?.againstName || dispute?.against?.name || "",
+      });
+    }
+
+    return queue.sort((a, b) => new Date(b.date || 0).getTime() - new Date(a.date || 0).getTime());
   }, []);
 
   const fetchSummaryInBackground = useCallback(async () => {
@@ -420,17 +483,19 @@ export default function AdminDashboardPage() {
       setChartReady(false);
 
       try {
-        const [usersData, providersData, bookingsData] = await Promise.all([
+        const [usersData, providersData, bookingsData, disputesData] = await Promise.all([
           adminService.getUsers(token),
           adminService.getProviders(token),
           adminService.getBookings(token),
+          getAdminDisputes(),
         ]);
 
         setUsers(usersData || []);
         setProviders(providersData || []);
         setBookings(bookingsData || []);
+        setDisputes(disputesData || []);
 
-        const queue = buildAttentionQueue(providersData || []);
+        const queue = buildAttentionQueue(providersData || [], disputesData || []);
         setAttentionItems(queue);
 
         const alreadySeen = sessionStorage.getItem(attentionStorageKey) === "1";
@@ -581,6 +646,14 @@ export default function AdminDashboardPage() {
   }, [bookings, providers, customers, selectedRange]);
 
   const visibleAttentionItems = useMemo(() => attentionItems || [], [attentionItems]);
+  const providerAttentionItems = useMemo(
+    () => visibleAttentionItems.filter((item) => item.type !== "dispute"),
+    [visibleAttentionItems]
+  );
+  const disputeAttentionItems = useMemo(
+    () => visibleAttentionItems.filter((item) => item.type === "dispute"),
+    [visibleAttentionItems]
+  );
 
   const providerForActions = selectedProvider;
 
@@ -604,7 +677,7 @@ export default function AdminDashboardPage() {
       <div className="flex flex-col gap-3 rounded-3xl bg-white p-6 shadow-sm lg:flex-row lg:items-center lg:justify-between">
         <div>
           <h1 className="text-3xl font-bold text-gray-900">Admin Dashboard</h1>
-          <p className="mt-1 text-gray-600">Manage users, providers, bookings, and analytics.</p>
+          <p className="mt-1 text-gray-600">Manage users, providers, bookings, disputes, and analytics.</p>
         </div>
 
         <div className="flex flex-wrap gap-3">
@@ -629,12 +702,10 @@ export default function AdminDashboardPage() {
       </div>
 
       {error && (
-        <div className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-red-700">
-          {error}
-        </div>
+        <div className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-red-700">{error}</div>
       )}
 
-      <div className="grid grid-cols-2 gap-4 md:grid-cols-3 xl:grid-cols-6">
+      <div className="grid grid-cols-2 gap-4 md:grid-cols-3 xl:grid-cols-7">
         <StatCard label="Users" value={summary?.totalUsers ?? users.length} icon={<FaUsers />} />
         <StatCard
           label="Customers"
@@ -657,6 +728,11 @@ export default function AdminDashboardPage() {
           icon={<FaExclamationTriangle />}
         />
         <StatCard label="Resubmissions" value={resubmissionCount} icon={<FaRedoAlt />} />
+        <StatCard
+          label="Disputes"
+          value={summary?.totalDisputes ?? disputes.length}
+          icon={<FaExclamationTriangle />}
+        />
       </div>
 
       <Card className="border-0 shadow-sm">
@@ -786,7 +862,7 @@ export default function AdminDashboardPage() {
                   <h2 className="text-2xl font-bold text-gray-900">Review Queue</h2>
                 </div>
                 <p className="mt-1 text-sm text-gray-500">
-                  New providers and resubmissions need your attention.
+                  New providers, resubmissions, and disputes need your attention.
                 </p>
               </div>
 
@@ -801,55 +877,115 @@ export default function AdminDashboardPage() {
 
             <div className="max-h-[70vh] overflow-y-auto px-6 py-5">
               <div className="mb-4 rounded-2xl border border-sky-200 bg-sky-50 p-4 text-sm text-sky-700">
-                <strong>{visibleAttentionItems.length}</strong> account(s) require review.
+                <strong>{providerAttentionItems.length}</strong> provider account(s) and{" "}
+                <strong>{disputeAttentionItems.length}</strong> dispute(s) require review.
               </div>
 
-              <div className="space-y-3">
-                {visibleAttentionItems.map((item) => (
-                  <div key={item.id} className="rounded-2xl border bg-gray-50 p-4">
-                    <div className="flex flex-col gap-3">
-                      <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
-                        <div>
-                          <div className="flex flex-wrap items-center gap-2">
-                            <span
-                              className={`inline-flex items-center rounded-full px-3 py-1 text-xs font-semibold ${
-                                item.type === "resubmission"
-                                  ? "bg-yellow-100 text-yellow-700"
-                                  : "bg-green-100 text-green-700"
-                              }`}
-                            >
-                              {item.type === "resubmission" ? "Resubmission" : "New Provider"}
-                            </span>
-                            <p className="font-semibold text-gray-900">{item.title}</p>
-                          </div>
-                          <p className="text-sm text-gray-600">{item.subtitle}</p>
-                          <p className="mt-1 text-sm text-gray-700">{item.detail}</p>
-
-                          {item.previousReason ? (
-                            <div className="mt-2 rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-700">
-                              <strong>Previous rejection:</strong> {item.previousReason}
+              {providerAttentionItems.length > 0 && (
+                <div className="space-y-3">
+                  <h3 className="text-sm font-semibold uppercase tracking-wide text-gray-500">
+                    Provider reviews
+                  </h3>
+                  {providerAttentionItems.map((item) => (
+                    <div key={item.id} className="rounded-2xl border bg-gray-50 p-4">
+                      <div className="flex flex-col gap-3">
+                        <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+                          <div>
+                            <div className="flex flex-wrap items-center gap-2">
+                              <span
+                                className={`inline-flex items-center rounded-full px-3 py-1 text-xs font-semibold ${
+                                  item.type === "resubmission"
+                                    ? "bg-yellow-100 text-yellow-700"
+                                    : "bg-green-100 text-green-700"
+                                }`}
+                              >
+                                {item.type === "resubmission" ? "Resubmission" : "New Provider"}
+                              </span>
+                              <p className="font-semibold text-gray-900">{item.title}</p>
                             </div>
-                          ) : null}
+                            <p className="text-sm text-gray-600">{item.subtitle}</p>
+                            <p className="mt-1 text-sm text-gray-700">{item.detail}</p>
+
+                            {item.previousReason ? (
+                              <div className="mt-2 rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-700">
+                                <strong>Previous rejection:</strong> {item.previousReason}
+                              </div>
+                            ) : null}
+                          </div>
+
+                          <div className="text-sm text-gray-500 sm:text-right">
+                            <p>{formatDateTime(item.date)}</p>
+                          </div>
                         </div>
 
-                        <div className="text-sm text-gray-500 sm:text-right">
-                          <p>{formatDateTime(item.date)}</p>
+                        <div className="flex flex-wrap gap-2">
+                          <Button
+                            variant="outline"
+                            onClick={() =>
+                              openProviderDetails(
+                                item,
+                                item.type === "resubmission" ? "history" : "services"
+                              )
+                            }
+                          >
+                            <FaEye className="mr-2" />
+                            View
+                          </Button>
                         </div>
-                      </div>
-
-                      <div className="flex flex-wrap gap-2">
-                        <Button
-                          variant="outline"
-                          onClick={() => openProviderDetails(item, item.type === "resubmission" ? "history" : "services")}
-                        >
-                          <FaEye className="mr-2" />
-                          View
-                        </Button>
                       </div>
                     </div>
-                  </div>
-                ))}
-              </div>
+                  ))}
+                </div>
+              )}
+
+              {disputeAttentionItems.length > 0 && (
+                <div className="mt-6 space-y-3">
+                  <h3 className="text-sm font-semibold uppercase tracking-wide text-gray-500">
+                    Disputes
+                  </h3>
+                  {disputeAttentionItems.map((item) => (
+                    <div key={item.id} className="rounded-2xl border bg-gray-50 p-4">
+                      <div className="flex flex-col gap-3">
+                        <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+                          <div>
+                            <div className="flex flex-wrap items-center gap-2">
+                              <span className="inline-flex items-center rounded-full bg-rose-100 px-3 py-1 text-xs font-semibold text-rose-700">
+                                Dispute
+                              </span>
+                              <p className="font-semibold text-gray-900">{item.title}</p>
+                            </div>
+                            <p className="text-sm text-gray-600">{item.subtitle}</p>
+                            <p className="mt-1 text-sm text-gray-700">{item.detail}</p>
+                            <p className="mt-2 text-xs text-gray-500">
+                              {item.openedByName || "Customer"} vs {item.againstName || "Provider"}
+                            </p>
+                          </div>
+
+                          <div className="text-sm text-gray-500 sm:text-right">
+                            <p>{formatDateTime(item.date)}</p>
+                          </div>
+                        </div>
+
+                        <div className="flex flex-wrap gap-2">
+                          <Button
+                            variant="outline"
+                            onClick={() =>
+                              navigate(
+                                item.disputeId
+                                  ? `/admin/disputes/${item.disputeId}`
+                                  : "/admin/disputes"
+                              )
+                            }
+                          >
+                            <FaExclamationTriangle className="mr-2" />
+                            View dispute
+                          </Button>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
 
             <div className="flex justify-end gap-3 border-t px-6 py-4">
