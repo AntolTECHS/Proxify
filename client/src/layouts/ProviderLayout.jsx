@@ -43,44 +43,43 @@ export default function ProviderLayout() {
   ];
 
   const SidebarContent = () => (
-    <div className="flex flex-col h-full">
-      <div className="p-6 border-b border-gray-200">
-        <h1 className="text-2xl font-bold text-gray-800">Provider Portal</h1>
-        <p className="text-gray-500 text-sm mt-1 flex items-center gap-2">
+    <div className="flex h-full flex-col">
+      <div className="border-b border-slate-200 px-6 py-6">
+        <h1 className="text-2xl font-bold text-slate-900">Provider Portal</h1>
+        <p className="mt-2 flex items-center gap-2 text-sm text-slate-500">
           {user.name}
           {user.providerStatus === "pending" && (
-            <span className="px-2 py-0.5 text-xs font-semibold bg-yellow-100 text-yellow-800 rounded">
+            <span className="rounded-full bg-amber-100 px-2 py-0.5 text-xs font-semibold text-amber-800">
               Pending
             </span>
           )}
         </p>
       </div>
 
-      <nav className="flex-1 p-4 space-y-2">
+      <nav className="flex-1 space-y-2 p-4">
         {navItems.map((item) => (
           <NavLink
             key={item.path}
             to={item.path}
             onClick={() => setMobileOpen(false)}
             className={({ isActive }) =>
-              `flex items-center gap-3 px-4 py-2 rounded-md transition ${
+              `flex items-center gap-3 rounded-xl px-4 py-2 text-sm font-semibold transition ${
                 isActive
-                  ? "bg-sky-400 text-white"
-                  : "text-gray-700 hover:bg-sky-100"
+                  ? "bg-slate-900 text-white shadow"
+                  : "text-slate-600 hover:bg-slate-100 hover:text-slate-900"
               }`
             }
           >
-            {item.icon}
+            <span className="text-base">{item.icon}</span>
             <span>{item.label}</span>
           </NavLink>
         ))}
       </nav>
 
-      {/* Logout */}
-      <div className="p-4 border-t border-gray-200">
+      <div className="border-t border-slate-200 p-4">
         <button
           onClick={logout}
-          className="flex items-center gap-2 px-4 py-2 w-full rounded-md text-gray-700 hover:bg-sky-100 transition"
+          className="flex w-full items-center gap-2 rounded-xl px-4 py-2 text-sm font-semibold text-slate-600 transition hover:bg-rose-50 hover:text-rose-600"
         >
           <FaSignOutAlt />
           <span>Logout</span>
@@ -90,9 +89,9 @@ export default function ProviderLayout() {
   );
 
   return (
-    <div className="flex min-h-screen bg-gray-100 w-full">
+    <div className="flex min-h-screen w-full bg-gradient-to-br from-slate-100 via-slate-50 to-amber-50">
       {/* Sidebar for large screens */}
-      <aside className="hidden lg:flex flex-col w-64 bg-white shadow-lg border-r border-gray-200">
+      <aside className="hidden w-72 flex-col border-r border-slate-200 bg-white/90 shadow-lg backdrop-blur lg:flex">
         <SidebarContent />
       </aside>
 
@@ -100,14 +99,14 @@ export default function ProviderLayout() {
       {mobileOpen && (
         <div className="fixed inset-0 z-50 flex">
           <div
-            className="fixed inset-0 bg-black bg-opacity-50"
+            className="fixed inset-0 bg-slate-900/60"
             onClick={() => setMobileOpen(false)}
           ></div>
-          <aside className="relative w-64 bg-white shadow-lg flex flex-col z-50">
-            <div className="p-4 flex justify-end items-center border-b border-gray-200">
+          <aside className="relative z-50 flex w-72 flex-col bg-white shadow-2xl">
+            <div className="flex items-center justify-end border-b border-slate-200 p-4">
               <button
                 onClick={() => setMobileOpen(false)}
-                className="text-gray-700 hover:text-gray-900"
+                className="text-slate-600 hover:text-slate-900"
               >
                 <FaTimes />
               </button>
@@ -120,20 +119,20 @@ export default function ProviderLayout() {
       {/* Main content */}
       <div className="flex-1 flex flex-col w-full">
         {/* Mobile Header */}
-        <header className="bg-white shadow-sm p-4 border-b lg:hidden flex justify-between items-center">
-          <h2 className="text-lg font-semibold text-gray-800">
+        <header className="flex items-center justify-between border-b border-slate-200 bg-white/90 p-4 shadow-sm backdrop-blur lg:hidden">
+          <h2 className="text-lg font-semibold text-slate-900">
             {navItems.find((n) => location.pathname.startsWith(n.path))?.label || "Provider Portal"}
           </h2>
           <button
             onClick={() => setMobileOpen(true)}
-            className="text-gray-700 hover:text-gray-900"
+            className="text-slate-600 hover:text-slate-900"
           >
             <FaBars />
           </button>
         </header>
 
         {/* ✅ THIS IS THE FIX */}
-        <main className="flex-1 p-4 md:p-8 w-full">
+        <main className="w-full flex-1 p-4 md:p-8">
           <Outlet />
         </main>
       </div>

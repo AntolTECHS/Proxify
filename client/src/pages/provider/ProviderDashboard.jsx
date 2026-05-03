@@ -14,14 +14,19 @@ import {
   FaEye,
 } from "react-icons/fa";
 import {
-  LineChart,
-  Line,
+  Area,
+  AreaChart,
   XAxis,
   YAxis,
   CartesianGrid,
   Tooltip,
   ResponsiveContainer,
+  PieChart,
+  Pie,
+  Cell,
+  Legend,
 } from "recharts";
+import "../../styles/providerDashboard.css";
 
 const RAW_API_BASE_URL =
   import.meta.env.VITE_API_URL ||
@@ -88,6 +93,8 @@ function getDisputeText(dispute) {
   );
 }
 
+const PIE_COLORS = ["#2563eb", "#10b981", "#f59e0b", "#ef4444", "#8b5cf6", "#0f766e"];
+
 export default function ProviderDashboard() {
   const { user, token } = useAuth();
 
@@ -125,6 +132,68 @@ export default function ProviderDashboard() {
   );
 
   const [computedStats, setComputedStats] = useState(baseStats);
+  const statStyles = useMemo(
+    () => [
+      {
+        bg: "bg-blue-50",
+        borderAccent: "border-blue-100",
+        icon: "bg-blue-600",
+        text: "text-blue-700",
+        title: "text-slate-600",
+      },
+      {
+        bg: "bg-emerald-50",
+        borderAccent: "border-emerald-100",
+        icon: "bg-emerald-600",
+        text: "text-emerald-700",
+        title: "text-slate-600",
+      },
+      {
+        bg: "bg-amber-50",
+        borderAccent: "border-amber-100",
+        icon: "bg-amber-600",
+        text: "text-amber-700",
+        title: "text-slate-600",
+      },
+      {
+        bg: "bg-yellow-50",
+        borderAccent: "border-yellow-100",
+        icon: "bg-yellow-600",
+        text: "text-yellow-700",
+        title: "text-slate-600",
+      },
+      {
+        bg: "bg-purple-50",
+        borderAccent: "border-purple-100",
+        icon: "bg-purple-600",
+        text: "text-purple-700",
+        title: "text-slate-600",
+      },
+      {
+        bg: "bg-red-50",
+        borderAccent: "border-red-100",
+        icon: "bg-red-600",
+        text: "text-red-700",
+        title: "text-slate-600",
+      },
+    ],
+    []
+  );
+  const chartStroke = chartView === "earnings" ? "#0f766e" : "#2563eb";
+
+  const pieData = useMemo(() => {
+    const totalJobs = jobs.length;
+    const pendingJobs = jobs.filter((j) => normalize(j.status) === "pending").length;
+    const completedJobs = jobs.filter((j) => normalize(j.status) === "completed").length;
+    const totalDisputes = disputes.length;
+
+    return [
+      { name: "Jobs", value: totalJobs },
+      { name: "Pending", value: pendingJobs },
+      { name: "Completed", value: completedJobs },
+      { name: "Disputes", value: totalDisputes },
+    ].filter((item) => item.value > 0);
+  }, [jobs, disputes]);
 
   const fetchDashboard = async () => {
     if (!token) return;
@@ -279,15 +348,16 @@ export default function ProviderDashboard() {
 
   if (loading) {
     return (
-      <div className="w-full min-h-screen bg-gray-100 p-4 md:p-6">
-        <div className="rounded-2xl bg-white p-6 shadow-sm">Loading dashboard...</div>
+      <div className="provider-dashboard-page min-h-screen w-full px-4 py-6 md:px-6">
+        <div className="provider-panel rounded-2xl p-6">Loading dashboard...</div>
       </div>
     );
   }
 
   return (
-    <div className="w-full min-h-screen bg-gray-100 p-4 md:p-6">
-      <div className={`mb-6 p-4 flex items-start border-l-4 rounded ${statusStyles}`}>
+    <div className="provider-dashboard-page min-h-screen w-full px-4 py-6 md:px-6">
+      <div className="provider-dashboard-shell">
+        <div className={`provider-status-card mb-6 flex items-start gap-3 ${statusStyles}`}>
         <FaExclamationTriangle className="w-6 h-6 mr-3 mt-0.5" />
         <div className="flex-1">
           <p className="font-semibold">Provider Status: {providerBanner}</p>
@@ -325,111 +395,233 @@ export default function ProviderDashboard() {
       </div>
 
       {dashboardError && (
-        <div className="mb-6 rounded-2xl border border-red-200 bg-red-50 p-4 text-sm text-red-700">
+        <div className="mb-6 rounded-2xl border border-red-200 bg-red-50 p-4 text-sm text-red-700 shadow-sm">
           {dashboardError}
         </div>
       )}
 
-      <h1 className="text-3xl font-bold text-gray-800 mb-8">
-        Welcome, {user?.name || "Provider"}!
-      </h1>
+        <div className="provider-hero mb-8">
+          <div>
+            <p className="text-xs font-semibold uppercase tracking-widest text-blue-600">
+              Provider Dashboard
+            </p>
+            <h1 className="mt-2 text-4xl font-black text-slate-900 sm:text-5xl">
+              Welcome, {user?.name || "Provider"}!
+            </h1>
+            <p className="mt-3 max-w-2xl text-base text-slate-600">
+              Track your jobs, earnings, and disputes—all in one place.
+            </p>
+          </div>
+          <div className="provider-hero-chip">
+            <span className="provider-hero-dot" />
+            <span className="text-sm font-semibold text-slate-700">Status: {providerBanner}</span>
+          </div>
+        </div>
 
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6 mb-12">
-        {computedStats.map((stat, idx) => (
-          <div
-            key={idx}
-            className="flex items-center p-6 bg-white shadow-md rounded-lg border hover:shadow-xl transition"
-          >
-            <div className="p-4 bg-sky-500 rounded-full mr-4">{stat.icon}</div>
-            <div>
-              <p className="text-gray-500">{stat.title}</p>
-              <p className="text-2xl font-bold">{stat.value}</p>
+        <div className="provider-section">
+          <div className="provider-section-head">
+            <h2 className="text-2xl font-bold text-slate-900">Performance snapshot</h2>
+            <p className="text-sm text-slate-500">Your operational stats at a glance.</p>
+          </div>
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6">
+            {computedStats.map((stat, idx) => {
+              const style = statStyles[idx % statStyles.length];
+              return (
+                <div
+                  key={idx}
+                  className={`provider-stat-card ${style.bg} border ${style.borderAccent} rounded-lg p-3 shadow-sm hover:shadow-md hover:-translate-y-1 transition-all duration-300`}
+                >
+                  <div className={`provider-stat-icon ${style.icon} w-10 h-10 rounded-lg flex items-center justify-center mb-2 shadow-md`}>
+                    {stat.icon}
+                  </div>
+                  <div className="min-w-0">
+                    <p className={`text-xs font-semibold uppercase tracking-wide ${style.title}`}>
+                      {stat.title}
+                    </p>
+                    <p className={`mt-1 text-lg font-black ${style.text}`}>{stat.value}</p>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+
+        <div className="mt-8 grid gap-6 lg:grid-cols-3">
+          <div className="provider-panel provider-chart-panel rounded-2xl shadow-sm hover:shadow-md transition-all duration-300">
+            <div className="provider-section-head mb-6">
+              <div>
+                <h2 className="text-2xl font-bold text-slate-900">Analytics Mix</h2>
+                <p className="mt-1 text-sm text-slate-500">
+                  Jobs, disputes, and workload distribution.
+                </p>
+              </div>
+            </div>
+
+            <div className="provider-chart-shell rounded-xl">
+              {pieData.length === 0 ? (
+                <div className="rounded-xl border border-slate-200 bg-slate-50 p-6 text-sm text-slate-600">
+                  No data available yet.
+                </div>
+              ) : (
+                <ResponsiveContainer width="100%" height={260}>
+                  <PieChart>
+                    <Legend verticalAlign="bottom" height={36} wrapperStyle={{ fontSize: 11 }} />
+                    <Tooltip
+                      formatter={(value, name) =>
+                        name === "Earnings" ? [formatKES(value), name] : [value, name]
+                      }
+                    />
+                    <Pie
+                      data={pieData}
+                      dataKey="value"
+                      nameKey="name"
+                      cx="50%"
+                      cy="45%"
+                      innerRadius={45}
+                      outerRadius={80}
+                      paddingAngle={4}
+                    >
+                      {pieData.map((entry, index) => (
+                        <Cell
+                          key={`provider-pie-${entry.name}`}
+                          fill={PIE_COLORS[index % PIE_COLORS.length]}
+                        />
+                      ))}
+                    </Pie>
+                  </PieChart>
+                </ResponsiveContainer>
+              )}
             </div>
           </div>
-        ))}
-      </div>
 
-      <div className="bg-white p-6 shadow-md rounded-lg border mb-12">
-        <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between mb-4">
-          <h2 className="text-xl font-semibold">
-            Monthly {chartView === "jobs" ? "Jobs" : "Earnings"} Trend
-          </h2>
+          <div className="provider-panel provider-chart-panel lg:col-span-2 rounded-2xl shadow-sm hover:shadow-md transition-all duration-300">
+            <div className="provider-section-head mb-6">
+              <div>
+                <h2 className="text-2xl font-bold text-slate-900">
+                  Monthly {chartView === "jobs" ? "Jobs" : "Earnings"} Trend
+                </h2>
+                <p className="mt-1 text-sm text-slate-500">
+                  Monitor your workload and revenue evolution.
+                </p>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                <button
+                  onClick={() => setChartView("jobs")}
+                  className={`provider-chip ${
+                    chartView === "jobs" ? "provider-chip-active" : ""}
+                  `}
+                >
+                  Jobs
+                </button>
 
-          <div>
-            <button
-              onClick={() => setChartView("jobs")}
-              className={`px-4 py-1 mr-2 rounded border ${
-                chartView === "jobs" ? "bg-sky-500 text-white" : "bg-white"
-              }`}
-            >
-              Jobs
-            </button>
+                <button
+                  onClick={() => setChartView("earnings")}
+                  className={`provider-chip ${
+                    chartView === "earnings" ? "provider-chip-active" : ""}
+                  `}
+                >
+                  Earnings
+                </button>
+              </div>
+            </div>
 
-            <button
-              onClick={() => setChartView("earnings")}
-              className={`px-4 py-1 rounded border ${
-                chartView === "earnings" ? "bg-sky-500 text-white" : "bg-white"
-              }`}
-            >
-              Earnings
-            </button>
+            <div className="provider-chart-shell rounded-xl">
+              <ResponsiveContainer width="100%" height={260}>
+                <AreaChart data={chartData}>
+                  <defs>
+                    <linearGradient id="providerChartLine" x1="0" y1="0" x2="1" y2="0">
+                      <stop offset="0%" stopColor={chartStroke} stopOpacity={0.2} />
+                      <stop offset="50%" stopColor={chartStroke} stopOpacity={0.9} />
+                      <stop offset="100%" stopColor={chartStroke} stopOpacity={0.35} />
+                    </linearGradient>
+                    <linearGradient id="providerChartFill" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="0%" stopColor={chartStroke} stopOpacity={0.3} />
+                      <stop offset="100%" stopColor={chartStroke} stopOpacity={0.02} />
+                    </linearGradient>
+                  </defs>
+                  <CartesianGrid strokeDasharray="4 6" stroke="#dbe7e1" />
+                  <XAxis dataKey="month" tick={{ fill: "#4f6b68", fontSize: 12 }} />
+                  <YAxis
+                    tick={{ fill: "#4f6b68", fontSize: 12 }}
+                    tickFormatter={(value) =>
+                      chartView === "earnings" ? formatKES(value) : value
+                    }
+                  />
+                  <Tooltip
+                    content={({ active, payload, label }) => {
+                      if (!active || !payload?.length) return null;
+                      const value = payload[0].value;
+                      return (
+                        <div className="provider-chart-tooltip">
+                          <p className="provider-chart-tooltip-label">{label}</p>
+                          <p className="provider-chart-tooltip-value">
+                            {chartView === "earnings" ? formatKES(value) : value}
+                          </p>
+                        </div>
+                      );
+                    }}
+                  />
+                  <Area
+                    type="monotone"
+                    dataKey={chartView === "jobs" ? "jobs" : "earnings"}
+                    stroke="url(#providerChartLine)"
+                    strokeWidth={3}
+                    fill="url(#providerChartFill)"
+                    dot={{ stroke: chartStroke, strokeWidth: 2, r: 4, fill: "#ffffff" }}
+                    activeDot={{ r: 6, stroke: chartStroke, strokeWidth: 2, fill: "#ffffff" }}
+                  />
+                </AreaChart>
+              </ResponsiveContainer>
+            </div>
           </div>
         </div>
 
-        <ResponsiveContainer width="100%" height={250}>
-          <LineChart data={chartData}>
-            <CartesianGrid strokeDasharray="3 3" />
-            <XAxis dataKey="month" />
-            <YAxis
-              tickFormatter={(value) => (chartView === "earnings" ? formatKES(value) : value)}
-            />
-            <Tooltip
-              formatter={(value) => (chartView === "earnings" ? formatKES(value) : value)}
-            />
-            <Line
-              type="monotone"
-              dataKey={chartView === "jobs" ? "jobs" : "earnings"}
-              stroke="#0ea5e9"
-              strokeWidth={2}
-            />
-          </LineChart>
-        </ResponsiveContainer>
-      </div>
+        <div className="provider-section mt-8">
+          <div className="provider-section-head">
+            <h2 className="text-2xl font-bold text-slate-900">Quick actions</h2>
+            <p className="text-sm text-slate-500">Jump into your most-used workflows.</p>
+          </div>
+          <div className="grid grid-cols-1 gap-5 lg:grid-cols-3">
+            <div
+              onClick={() => {
+                if (canManageServices) setModal("services");
+                else setDashboardError("You can only manage services after approval.");
+              }}
+              className={`provider-action-card ${
+                canManageServices ? "provider-action-active" : "provider-action-disabled"
+              }`}
+            >
+              <div className="provider-action-kicker">SERVICES</div>
+              <h3 className="text-lg font-bold text-slate-900">Manage Services</h3>
+              <p className="mt-1 text-sm text-slate-600">Update your services and pricing.</p>
+              {!canManageServices && (
+                <p className="mt-2 text-xs font-medium text-red-600">
+                  Available only after admin approval.
+                </p>
+              )}
+            </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        <div
-          onClick={() => {
-            if (canManageServices) setModal("services");
-            else setDashboardError("You can only manage services after approval.");
-          }}
-          className={`p-6 bg-white shadow-md rounded-lg border transition ${
-            canManageServices ? "hover:shadow-lg cursor-pointer" : "opacity-70 cursor-not-allowed"
-          }`}
-        >
-          <h3 className="text-lg font-semibold mb-2">Manage Services</h3>
-          <p className="text-gray-600 text-sm">Update your services and pricing.</p>
-          {!canManageServices && (
-            <p className="mt-2 text-sm text-red-600">Available only after admin approval.</p>
-          )}
-        </div>
+            <div
+              onClick={() => setModal("jobs")}
+              className="provider-action-card provider-action-active"
+            >
+              <div className="provider-action-kicker">JOBS</div>
+              <h3 className="text-lg font-bold text-slate-900">View Jobs</h3>
+              <p className="mt-1 text-sm text-slate-600">View all assigned jobs.</p>
+            </div>
 
-        <div
-          onClick={() => setModal("jobs")}
-          className="p-6 bg-white shadow-md rounded-lg border hover:shadow-lg cursor-pointer"
-        >
-          <h3 className="text-lg font-semibold mb-2">View Jobs</h3>
-          <p className="text-gray-600 text-sm">View all assigned jobs.</p>
-        </div>
-
-        <div
-          onClick={() => setModal("disputes")}
-          className="p-6 bg-white shadow-md rounded-lg border hover:shadow-lg cursor-pointer"
-        >
-          <h3 className="text-lg font-semibold mb-2">View Disputes</h3>
-          <p className="text-gray-600 text-sm">Review unresolved disputes and follow up.</p>
-          <div className="mt-3 inline-flex items-center gap-2 rounded-full bg-rose-50 px-3 py-1 text-xs font-semibold text-rose-700">
-            <FaExclamationTriangle />
-            {unresolvedDisputes.length} open dispute(s)
+            <div
+              onClick={() => setModal("disputes")}
+              className="provider-action-card provider-action-active"
+            >
+              <div className="provider-action-kicker">DISPUTES</div>
+              <h3 className="text-lg font-bold text-slate-900">View Disputes</h3>
+              <p className="mt-1 text-sm text-slate-600">Review unresolved disputes and follow up.</p>
+              <div className="mt-3 inline-flex items-center gap-2 rounded-full bg-red-50 px-3 py-1 text-xs font-semibold text-red-700">
+                <FaExclamationTriangle />
+                {unresolvedDisputes.length} open dispute(s)
+              </div>
+            </div>
           </div>
         </div>
       </div>

@@ -25,7 +25,7 @@ export default function Register() {
 
     const result = await register({ name, email, password, role: "customer", phone });
     if (result.success) {
-      navigate("/", { replace: true });
+      navigate("/customer/dashboard", { replace: true });
     }
   };
 

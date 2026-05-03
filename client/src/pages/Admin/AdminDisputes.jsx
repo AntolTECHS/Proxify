@@ -68,9 +68,9 @@ const getDescription = (d) =>
   d?.description || d?.issue || d?.message || d?.reason || "No description provided";
 
 const StatPill = ({ label, value }) => (
-  <div className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white px-4 py-2 text-sm text-slate-700 shadow-sm">
-    <span className="font-medium text-slate-500">{label}</span>
-    <span className="font-semibold text-slate-900">{value}</span>
+  <div className="inline-flex items-center gap-2 rounded-full border border-[#d7e2ea] bg-white/90 px-4 py-2 text-sm text-[#334155] shadow-[0_10px_30px_rgba(15,23,42,0.08)] backdrop-blur">
+    <span className="font-semibold text-[#64748b]">{label}</span>
+    <span className="font-bold text-[#0f172a]">{value}</span>
   </div>
 );
 
@@ -243,29 +243,35 @@ export default function AdminDisputes() {
   };
 
   return (
-    <div className="min-h-screen bg-slate-50 px-4 py-5 sm:px-6 lg:px-8">
-      <div className="mx-auto max-w-7xl space-y-6">
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
-          <div>
-            <div className="inline-flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">
-              <FaShieldAlt />
-              Admin Panel
-            </div>
-            <h1 className="mt-1 text-3xl font-bold tracking-tight text-slate-900">
-              Disputes
-            </h1>
-            <p className="mt-1 max-w-2xl text-sm text-slate-500">
-              Review disputes by category, inspect the case, resolve outcomes, and close cases cleanly.
-            </p>
-          </div>
+    <div className="relative min-h-screen overflow-hidden bg-gradient-to-br from-[#f4f7fb] via-[#f8fafc] to-[#fff4e8] px-4 py-6 sm:px-6 lg:px-8">
+      <div className="pointer-events-none absolute -left-24 top-10 h-56 w-56 rounded-full bg-[#0f172a]/10 blur-[120px]" />
+      <div className="pointer-events-none absolute right-0 top-32 h-64 w-64 rounded-full bg-[#0ea5e9]/15 blur-[140px]" />
+      <div className="pointer-events-none absolute bottom-10 left-1/3 h-64 w-64 rounded-full bg-[#f59e0b]/20 blur-[140px]" />
 
-          <button
-            onClick={load}
-            className="inline-flex items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-900 shadow-sm transition hover:bg-slate-100"
-          >
-            <FaSyncAlt className={loading ? "animate-spin" : ""} />
-            Refresh
-          </button>
+      <div className="mx-auto max-w-7xl space-y-6">
+        <div className="rounded-[28px] border border-[#dde6ee] bg-white/80 p-6 shadow-[0_20px_60px_rgba(15,23,42,0.12)] backdrop-blur">
+          <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+            <div>
+              <div className="inline-flex items-center gap-2 rounded-full bg-slate-900/5 px-3 py-1 text-xs font-semibold uppercase tracking-[0.2em] text-slate-600">
+                <FaShieldAlt />
+                Admin Panel
+              </div>
+              <h1 className="mt-2 text-3xl font-black tracking-tight text-[#0f172a] sm:text-4xl">
+                Disputes
+              </h1>
+              <p className="mt-2 max-w-2xl text-sm text-slate-600">
+                Review disputes by category, inspect the case, resolve outcomes, and close cases cleanly.
+              </p>
+            </div>
+
+            <button
+              onClick={load}
+              className="inline-flex items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-900 shadow-[0_10px_30px_rgba(15,23,42,0.08)] transition hover:bg-slate-50"
+            >
+              <FaSyncAlt className={loading ? "animate-spin" : ""} />
+              Refresh
+            </button>
+          </div>
         </div>
 
         <div className="flex flex-wrap gap-3">
@@ -277,7 +283,7 @@ export default function AdminDisputes() {
           <StatPill label="Closed" value={stats.closed} />
         </div>
 
-        <div className="rounded-[24px] border border-slate-200 bg-white p-4 shadow-sm">
+        <div className="rounded-[28px] border border-[#dde6ee] bg-white/90 p-5 shadow-[0_16px_45px_rgba(15,23,42,0.12)] backdrop-blur">
           <div className="grid gap-3 lg:grid-cols-[1fr_auto] lg:items-center">
             <div className="relative">
               <FaSearch className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
@@ -285,7 +291,7 @@ export default function AdminDisputes() {
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}
                 placeholder="Search dispute text..."
-                className="w-full rounded-2xl border border-slate-200 bg-white py-3 pl-10 pr-4 text-sm outline-none transition placeholder:text-slate-400 focus:border-slate-400 focus:ring-2 focus:ring-slate-100"
+                className="w-full rounded-2xl border border-slate-200 bg-white py-3 pl-10 pr-4 text-sm text-slate-700 outline-none transition placeholder:text-slate-400 focus:border-slate-400 focus:ring-2 focus:ring-slate-200"
               />
             </div>
 
@@ -296,7 +302,7 @@ export default function AdminDisputes() {
                   onClick={() => setStatusFilter(f)}
                   className={`inline-flex items-center gap-2 rounded-2xl px-4 py-3 text-sm font-medium transition ${
                     statusFilter === f
-                      ? "bg-slate-900 text-white"
+                      ? "bg-slate-900 text-white shadow-[0_10px_25px_rgba(15,23,42,0.16)]"
                       : "border border-slate-200 bg-slate-50 text-slate-700 hover:bg-slate-100"
                   }`}
                 >
@@ -355,25 +361,25 @@ export default function AdminDisputes() {
         ) : null}
 
         {loading ? (
-          <div className="rounded-[24px] border border-slate-200 bg-white p-10 text-center shadow-sm">
+          <div className="rounded-[24px] border border-[#dde6ee] bg-white/90 p-10 text-center shadow-[0_16px_45px_rgba(15,23,42,0.1)]">
             <div className="mx-auto inline-flex items-center gap-2 rounded-full bg-slate-50 px-4 py-2 text-sm font-medium text-slate-600">
               <FaSyncAlt className="animate-spin" />
               Loading disputes...
             </div>
           </div>
         ) : filtered.length === 0 ? (
-          <div className="rounded-[24px] border border-dashed border-slate-300 bg-white p-12 text-center shadow-sm">
+          <div className="rounded-[24px] border border-dashed border-slate-300 bg-white/90 p-12 text-center shadow-[0_16px_45px_rgba(15,23,42,0.1)]">
             <p className="text-lg font-semibold text-slate-800">No disputes found</p>
             <p className="mt-1 text-sm text-slate-500">
               Try another search or category.
             </p>
           </div>
         ) : (
-          <div className="overflow-hidden rounded-[24px] border border-slate-200 bg-white shadow-sm">
+          <div className="overflow-hidden rounded-[28px] border border-[#dde6ee] bg-white/90 shadow-[0_16px_45px_rgba(15,23,42,0.12)]">
             <div className="hidden overflow-x-auto lg:block">
               <table className="min-w-full border-collapse">
-                <thead className="bg-slate-50">
-                  <tr className="border-b border-slate-200">
+                <thead className="bg-slate-50/80">
+                  <tr className="border-b border-slate-200/80">
                     <Th>Category</Th>
                     <Th>Description</Th>
                     <Th>Created</Th>
@@ -482,48 +488,56 @@ export default function AdminDisputes() {
         )}
       </div>
 
-      {selected && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/55 p-4 backdrop-blur-sm">
-          <div className="relative w-full max-w-2xl rounded-[24px] bg-white p-6 shadow-2xl">
-            <button
-              className="absolute right-4 top-4 text-slate-400 transition hover:text-slate-700"
-              onClick={clearSelection}
-              disabled={busyId === selected._id}
-            >
-              <FaTimes />
-            </button>
+        {selected && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/65 p-4 backdrop-blur">
+            <div className="relative w-full max-w-2xl max-h-[90vh] overflow-hidden rounded-[28px] border border-[#e2e8f0] bg-white shadow-[0_30px_80px_rgba(15,23,42,0.35)]">
+              <button
+                className="absolute right-4 top-4 inline-flex h-10 w-10 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-500 shadow-sm transition hover:bg-slate-50 hover:text-slate-700"
+                onClick={clearSelection}
+                disabled={busyId === selected._id}
+                aria-label="Close"
+              >
+                <FaTimes />
+              </button>
 
-            <div className="pr-10">
-              <h2 className="text-2xl font-bold text-slate-900">Dispute Details</h2>
-              <p className="mt-1 text-sm text-slate-500">
+            <div className="rounded-2xl border border-slate-200/80 bg-gradient-to-r from-slate-50 via-white to-slate-50 p-4 pr-12">
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <div>
+                  <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">
+                    Dispute review
+                  </p>
+                  <h2 className="mt-1 text-2xl font-black text-slate-900">
+                    Dispute Details
+                  </h2>
+                </div>
+                <StatusBadge status={selected.status} />
+              </div>
+              <p className="mt-2 text-sm text-slate-500">
                 Focused on the category, description, and resolution.
               </p>
             </div>
 
-            <div className="mt-6 space-y-4">
-              <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
-                <FieldLabel>Category</FieldLabel>
-                <div className="text-lg font-semibold text-slate-900">
-                  {getCategoryLabel(selected.category)}
+            <div className="mt-5 max-h-[calc(90vh-150px)] space-y-4 overflow-y-auto pr-1">
+              <div className="grid gap-4 sm:grid-cols-2">
+                <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+                  <FieldLabel>Category</FieldLabel>
+                  <div className="text-lg font-semibold text-slate-900">
+                    {getCategoryLabel(selected.category)}
+                  </div>
+                </div>
+
+                <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+                  <FieldLabel>Created</FieldLabel>
+                  <div className="text-sm text-slate-700">
+                    {formatDate(selected.createdAt, true)}
+                  </div>
                 </div>
               </div>
 
-              <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
-                <FieldLabel>Status</FieldLabel>
-                <StatusBadge status={selected.status} />
-              </div>
-
-              <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+              <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
                 <FieldLabel>Description</FieldLabel>
-                <div className="rounded-xl bg-white p-4 text-sm leading-6 text-slate-700">
+                <div className="rounded-xl bg-slate-50 p-4 text-sm leading-6 text-slate-700">
                   {getDescription(selected)}
-                </div>
-              </div>
-
-              <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
-                <FieldLabel>Created</FieldLabel>
-                <div className="text-sm text-slate-700">
-                  {formatDate(selected.createdAt, true)}
                 </div>
               </div>
 
@@ -595,7 +609,14 @@ export default function AdminDisputes() {
                 </button>
               )}
 
-              <div className="flex justify-end">
+              <div className="flex flex-wrap justify-end gap-2">
+                <button
+                  type="button"
+                  onClick={clearSelection}
+                  className="inline-flex items-center rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-50"
+                >
+                  Close Window
+                </button>
                 <Link
                   to={`/admin/disputes/${selected._id}`}
                   className="inline-flex items-center rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-50"

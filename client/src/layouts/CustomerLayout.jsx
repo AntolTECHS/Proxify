@@ -11,6 +11,7 @@ import {
   FaTimes,
 } from "react-icons/fa";
 import { useAuth } from "../context/AuthContext.jsx";
+import "../styles/customerLayout.css";
 
 export default function CustomerLayout() {
   const { user, logout } = useAuth();
@@ -25,29 +26,33 @@ export default function CustomerLayout() {
   ];
 
   const SidebarContent = () => (
-    <div className="flex flex-col h-full">
+    <div className="flex h-full flex-col">
       {/* Brand */}
-      <div className="p-6 border-b border-gray-200">
-        <h1 className="text-2xl font-bold text-teal-600">Proxify</h1>
-        <p className="text-gray-500 text-sm mt-1">{user?.name}</p>
+      <div className="border-b border-emerald-100/80 p-6">
+        <div className="flex items-center gap-3">
+          <div className="layout-brand-mark">P</div>
+          <div>
+            <h1 className="layout-brand-title text-2xl">Proxify</h1>
+            <p className="mt-1 text-xs font-semibold uppercase tracking-[0.3em] text-emerald-700/70">
+              Customer
+            </p>
+          </div>
+        </div>
+        <div className="layout-user-chip mt-4">
+          <span className="layout-user-dot" />
+          <span className="truncate">{user?.name || "Guest"}</span>
+        </div>
       </div>
 
       {/* Navigation */}
-      <nav className="flex-1 p-4 space-y-1">
+      <nav className="flex-1 space-y-1 p-4">
         {navItems.map((item) => (
           <NavLink
             key={item.path}
             to={item.path}
             onClick={() => setMobileOpen(false)}
             className={({ isActive }) =>
-              `flex items-center gap-3 px-4 py-3 rounded-lg transition ${
-                isActive ? "shadow" : "text-gray-700 hover:bg-teal-50"
-              }`
-            }
-            style={({ isActive }) =>
-              isActive
-                ? { backgroundColor: "#0d9488", color: "#ffffff" } // teal-600
-                : { color: "#374151" } // gray-700
+              `layout-nav-item ${isActive ? "layout-nav-item-active" : ""}`
             }
           >
             {item.icon}
@@ -57,10 +62,10 @@ export default function CustomerLayout() {
       </nav>
 
       {/* Logout */}
-      <div className="p-4 border-t border-gray-200">
+      <div className="border-t border-emerald-100/80 p-4">
         <button
           onClick={logout}
-          className="flex items-center gap-3 px-4 py-3 w-full rounded-lg text-gray-700 hover:bg-red-50 hover:text-red-600 transition"
+          className="layout-logout-button"
         >
           <FaSignOutAlt />
           <span className="font-medium">Logout</span>
@@ -74,9 +79,9 @@ export default function CustomerLayout() {
     "Dashboard";
 
   return (
-    <div className="flex min-h-screen bg-gray-100 w-full">
+    <div className="customer-layout flex min-h-screen w-full">
       {/* Desktop Sidebar */}
-      <aside className="hidden lg:flex w-64 bg-white border-r border-gray-200 shadow-sm">
+      <aside className="layout-sidebar hidden w-72 border-r border-emerald-100/80 lg:flex">
         <SidebarContent />
       </aside>
 
@@ -84,13 +89,13 @@ export default function CustomerLayout() {
       {mobileOpen && (
         <div className="fixed inset-0 z-50 flex">
           <div
-            className="absolute inset-0 bg-black/40"
+            className="absolute inset-0 bg-slate-900/40 backdrop-blur-[2px]"
             onClick={() => setMobileOpen(false)}
           />
-          <aside className="relative w-64 bg-white shadow-xl flex flex-col">
+          <aside className="layout-sidebar relative w-72 shadow-2xl">
             <button
               onClick={() => setMobileOpen(false)}
-              className="absolute top-4 right-4 text-gray-500 hover:text-gray-800"
+              className="absolute right-4 top-4 text-emerald-800/70 hover:text-emerald-900"
             >
               <FaTimes size={18} />
             </button>
@@ -102,18 +107,23 @@ export default function CustomerLayout() {
       {/* Main Area */}
       <div className="flex-1 flex flex-col">
         {/* Mobile Header */}
-        <header className="lg:hidden bg-white border-b shadow-sm p-4 flex items-center justify-between">
-          <h2 className="text-lg font-semibold text-gray-800">{currentTitle}</h2>
+        <header className="layout-mobile-header md:hidden">
+          <div>
+            <p className="text-[11px] font-semibold uppercase tracking-[0.35em] text-emerald-700/70">
+              Your space
+            </p>
+            <h2 className="text-lg font-semibold text-emerald-900">{currentTitle}</h2>
+          </div>
           <button
             onClick={() => setMobileOpen(true)}
-            className="text-teal-600 hover:opacity-80 transition"
+            className="layout-menu-button md:hidden"
           >
             <FaBars size={20} />
           </button>
         </header>
 
         {/* Page Content */}
-        <main className="flex-1 p-4 md:p-8">
+        <main className="layout-main flex-1 p-4 md:p-8">
           <Outlet />
         </main>
       </div>

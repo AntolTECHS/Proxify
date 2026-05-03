@@ -2,6 +2,7 @@
 import { useEffect, useMemo, useState } from "react";
 import {
   FaCalendarAlt,
+  FaCheckCircle,
   FaClock,
   FaUser,
   FaTimes,
@@ -11,11 +12,14 @@ import {
   FaSearch,
   FaExclamationTriangle,
   FaComments,
+  FaLayerGroup,
+  FaMoneyBillWave,
 } from "react-icons/fa";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../../context/AuthContext.jsx";
 import { createDispute } from "../../api/disputeApi.js";
 import Chat from "../../components/Chat/Chat.jsx";
+import "../../styles/customerBookings.css";
 
 const API_URL = import.meta.env.VITE_API_URL || "http://localhost:5000/api";
 const FILTERS = ["All", "Upcoming", "Completed", "Cancelled"];
@@ -104,6 +108,33 @@ export default function CustomerBookings() {
       return matchesFilter && matchesQuery;
     });
   }, [bookings, filter, query]);
+
+  const bookingStats = useMemo(() => {
+    const now = new Date();
+    const stats = {
+      total: bookings.length,
+      upcoming: 0,
+      completed: 0,
+      cancelled: 0,
+      spend: 0,
+    };
+
+    bookings.forEach((booking) => {
+      const status = String(booking.status || "").toLowerCase();
+      const bookingDate = new Date(booking.scheduledAt);
+      const isUpcoming =
+        ["pending", "accepted", "in_progress"].includes(status) && bookingDate > now;
+
+      if (isUpcoming) stats.upcoming += 1;
+      if (status === "completed") {
+        stats.completed += 1;
+        if (typeof booking.price === "number") stats.spend += booking.price;
+      }
+      if (status === "cancelled") stats.cancelled += 1;
+    });
+
+    return stats;
+  }, [bookings]);
 
   const totalPages = Math.max(1, Math.ceil(filteredBookings.length / PAGE_SIZE));
 
@@ -269,6 +300,8 @@ Issue: ${disputeData.issue.trim()}`;
     disputeBooking?.providerName ||
     "Provider";
   const disputeCustomerName = user?.name || "Customer";
+  const filteredLabel = filter === "All" ? "All bookings" : `${filter} bookings`;
+  const formatCurrency = (value) => `Ksh ${value.toFixed(2)}`;
 
   if (loading) {
     return (
@@ -281,16 +314,56 @@ Issue: ${disputeData.issue.trim()}`;
   }
 
   return (
-    <div className="w-full px-2 py-3 sm:px-3 lg:px-4 xl:px-5">
-      <div className="space-y-5">
-        <div className="rounded-[26px] border border-teal-200 bg-gradient-to-r from-teal-600 via-cyan-600 to-sky-600 p-5 shadow-lg">
-          <h1 className="text-3xl font-bold tracking-tight text-white">Your Bookings</h1>
-          <p className="mt-1 text-sm text-teal-50 sm:text-base">
+    <div className="customer-bookings-page relative w-full overflow-hidden px-2 py-3 sm:px-3 lg:px-4 xl:px-5">
+      <div className="pointer-events-none absolute -left-14 top-10 h-48 w-48 rounded-full bg-[#0f766e]/15 blur-3xl" />
+      <div className="pointer-events-none absolute right-0 top-24 h-64 w-64 rounded-full bg-[#ca8a04]/10 blur-3xl" />
+
+      <div className="relative space-y-5">
+        <div className="bookings-reveal rounded-[28px] border border-[#d4e5df] bg-gradient-to-r from-[#f6fffc] via-[#eef9f5] to-[#fef6e4] p-5 shadow-[0_18px_60px_rgba(8,47,43,0.12)]">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-[0.3em] text-[#6f8885]">Bookings hub</p>
+              <h1 className="bookings-hero-title text-3xl font-black tracking-tight text-[#143f3a] sm:text-4xl">
+                Your Bookings
+              </h1>
+            </div>
+            <div className="rounded-2xl border border-[#d4e5df] bg-white/90 px-4 py-2 text-sm font-semibold text-[#0f766e] shadow-sm">
+              {filteredLabel} · {filteredBookings.length} shown
+            </div>
+          </div>
+          <p className="mt-1 text-sm text-[#4f6b68] sm:text-base">
             View, reschedule, cancel, dispute, and track all your bookings in one place.
           </p>
         </div>
 
-        <div className="grid gap-4 rounded-[22px] border border-slate-200 bg-white p-4 shadow-sm lg:grid-cols-[1fr_auto] lg:items-center">
+        <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+          <StatCard
+            title="Total bookings"
+            value={bookingStats.total}
+            icon={<FaLayerGroup />}
+            tone="teal"
+          />
+          <StatCard
+            title="Upcoming"
+            value={bookingStats.upcoming}
+            icon={<FaClock />}
+            tone="sky"
+          />
+          <StatCard
+            title="Completed"
+            value={bookingStats.completed}
+            icon={<FaCheckCircle />}
+            tone="emerald"
+          />
+          <StatCard
+            title="Total spend"
+            value={formatCurrency(bookingStats.spend)}
+            icon={<FaMoneyBillWave />}
+            tone="amber"
+          />
+        </div>
+
+        <div className="bookings-reveal grid gap-4 rounded-[22px] border border-[#d4e5df] bg-white/95 p-4 shadow-[0_12px_35px_rgba(8,47,43,0.09)] lg:grid-cols-[1fr_auto] lg:items-center">
           <div className="flex flex-wrap gap-2">
             {FILTERS.map((f) => {
               const active = filter === f;
@@ -303,8 +376,8 @@ Issue: ${disputeData.issue.trim()}`;
                   }}
                   className={`rounded-full px-4 py-2 text-sm font-medium transition ${
                     active
-                      ? "bg-teal-600 text-white shadow-sm"
-                      : "border border-slate-200 bg-slate-50 text-slate-700 hover:bg-slate-100"
+                      ? "bg-[#0f766e] text-white shadow-sm"
+                      : "border border-[#d7e6e1] bg-[#f8fcfb] text-[#4f6d69] hover:bg-white"
                   }`}
                 >
                   <span className="inline-flex items-center gap-2">
@@ -317,7 +390,7 @@ Issue: ${disputeData.issue.trim()}`;
           </div>
 
           <div className="relative w-full lg:w-80">
-            <FaSearch className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+            <FaSearch className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-[#7b9592]" />
             <input
               type="text"
               placeholder="Search service or provider..."
@@ -326,16 +399,16 @@ Issue: ${disputeData.issue.trim()}`;
                 setQuery(e.target.value);
                 setCurrentPage(1);
               }}
-              className="w-full rounded-xl border border-slate-200 bg-white py-2 pl-10 pr-3 text-sm outline-none transition placeholder:text-slate-400 focus:border-teal-500 focus:ring-2 focus:ring-teal-100"
+              className="w-full rounded-xl border border-[#d4e4df] bg-[#f7fcfa] py-2 pl-10 pr-3 text-sm text-[#203f3b] outline-none transition placeholder:text-[#8aa5a1] focus:border-[#0f766e] focus:bg-white focus:ring-2 focus:ring-[#0f766e]/15"
             />
           </div>
         </div>
 
-        <div className="hidden overflow-hidden rounded-[24px] border border-slate-200 bg-white shadow-sm lg:block">
+        <div className="bookings-panel bookings-reveal hidden overflow-hidden rounded-[24px] border border-[#d4e5df] bg-white shadow-[0_12px_35px_rgba(8,47,43,0.08)] lg:block">
           <div className="overflow-x-auto">
             <table className="min-w-full border-collapse">
-              <thead className="bg-slate-50">
-                <tr className="border-b border-slate-200">
+              <thead className="bg-[#f7fcfa]">
+                <tr className="border-b border-[#dce9e4]">
                   <Th>Service</Th>
                   <Th>Provider</Th>
                   <Th>Date</Th>
@@ -348,11 +421,11 @@ Issue: ${disputeData.issue.trim()}`;
 
               <tbody>
                 {paginatedBookings.length === 0 ? (
-                  <tr className="border-b border-slate-200">
+                  <tr className="border-b border-[#dce9e4]">
                     <td colSpan={7} className="px-5 py-16 text-center">
-                      <div className="mx-auto max-w-md rounded-2xl border border-dashed border-slate-300 bg-slate-50 px-6 py-10">
-                        <p className="text-base font-semibold text-slate-700">No bookings found</p>
-                        <p className="mt-1 text-sm text-slate-500">
+                      <div className="mx-auto max-w-md rounded-2xl border border-dashed border-[#d4e5df] bg-[#f8fcfb] px-6 py-10">
+                        <p className="text-base font-semibold text-[#4f6d69]">No bookings found</p>
+                        <p className="mt-1 text-sm text-[#78928f]">
                           Try a different filter or search term.
                         </p>
                       </div>
@@ -373,22 +446,22 @@ Issue: ${disputeData.issue.trim()}`;
                     return (
                       <tr
                         key={b._id}
-                        className="border-b border-slate-200 last:border-b-0 hover:bg-slate-50/80"
+                        className="border-b border-[#dce9e4] last:border-b-0 hover:bg-[#f9fcfb]"
                       >
                         <td className="px-5 py-4 align-top">
                           <div className="max-w-[220px]">
-                            <div className="truncate font-semibold text-slate-900">
+                            <div className="truncate font-semibold text-[#143f3a]">
                               {b.serviceName}
                             </div>
-                            <div className="mt-1 truncate text-sm text-slate-500">
+                            <div className="mt-1 truncate text-sm text-[#6e8784]">
                               {b.notes || "No notes"}
                             </div>
                           </div>
                         </td>
 
                         <td className="px-5 py-4 align-top">
-                          <div className="flex items-center gap-2 text-sm text-slate-700">
-                            <span className="inline-flex h-9 w-9 items-center justify-center rounded-full bg-teal-50 text-teal-600">
+                          <div className="flex items-center gap-2 text-sm text-[#4b6764]">
+                            <span className="inline-flex h-9 w-9 items-center justify-center rounded-full bg-[#e9f6f2] text-[#0f766e]">
                               <FaUser className="text-sm" />
                             </span>
                             <span className="font-medium">
@@ -397,16 +470,16 @@ Issue: ${disputeData.issue.trim()}`;
                           </div>
                         </td>
 
-                        <td className="px-5 py-4 align-top text-sm text-slate-700">
+                        <td className="px-5 py-4 align-top text-sm text-[#4f6d69]">
                           <span className="inline-flex items-center gap-2">
-                            <FaCalendarAlt className="text-teal-600" />
+                            <FaCalendarAlt className="text-[#0f766e]" />
                             {bookingDate.toLocaleDateString()}
                           </span>
                         </td>
 
-                        <td className="px-5 py-4 align-top text-sm text-slate-700">
+                        <td className="px-5 py-4 align-top text-sm text-[#4f6d69]">
                           <span className="inline-flex items-center gap-2">
-                            <FaClock className="text-teal-600" />
+                            <FaClock className="text-[#0f766e]" />
                             {bookingDate.toLocaleTimeString([], {
                               hour: "2-digit",
                               minute: "2-digit",
@@ -418,7 +491,7 @@ Issue: ${disputeData.issue.trim()}`;
                           <StatusBadge status={b.status} />
                         </td>
 
-                        <td className="px-5 py-4 align-top text-sm font-semibold text-slate-900">
+                        <td className="px-5 py-4 align-top text-sm font-semibold text-[#143f3a]">
                           {typeof b.price === "number" ? `Ksh ${b.price.toFixed(2)}` : "N/A"}
                         </td>
 
@@ -426,7 +499,7 @@ Issue: ${disputeData.issue.trim()}`;
                           <div className="flex flex-wrap justify-end gap-2">
                             <button
                               onClick={() => setSelectedBooking(b)}
-                              className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700 transition hover:border-teal-200 hover:bg-teal-50 hover:text-teal-700"
+                              className="inline-flex items-center gap-2 rounded-xl border border-[#d7e6e1] bg-white px-3 py-2 text-sm font-medium text-[#4f6d69] transition hover:border-[#0f766e]/35 hover:bg-[#edf8f5] hover:text-[#0f766e]"
                             >
                               <FaInfoCircle />
                               Details
@@ -434,7 +507,7 @@ Issue: ${disputeData.issue.trim()}`;
 
                             <button
                               onClick={() => openChat(b)}
-                              className="inline-flex items-center gap-2 rounded-xl border border-sky-200 bg-sky-50 px-3 py-2 text-sm font-medium text-sky-700 transition hover:bg-sky-100"
+                              className="inline-flex items-center gap-2 rounded-xl border border-[#cfe1db] bg-[#f6fcfa] px-3 py-2 text-sm font-medium text-[#0f766e] transition hover:bg-[#edf8f5]"
                             >
                               <FaComments />
                               Chat
@@ -457,7 +530,7 @@ Issue: ${disputeData.issue.trim()}`;
                               <>
                                 <button
                                   onClick={() => openReschedule(b)}
-                                  className="inline-flex items-center gap-2 rounded-xl border border-teal-200 bg-teal-50 px-3 py-2 text-sm font-medium text-teal-700 transition hover:bg-teal-100"
+                                  className="inline-flex items-center gap-2 rounded-xl border border-[#cfe1db] bg-[#f6fcfa] px-3 py-2 text-sm font-medium text-[#0f766e] transition hover:bg-[#edf8f5]"
                                 >
                                   <FaRedo />
                                   Reschedule
@@ -483,7 +556,7 @@ Issue: ${disputeData.issue.trim()}`;
 
           {filteredBookings.length > 0 && (
             <div className="flex items-center justify-between border-t border-slate-200 px-5 py-4">
-              <p className="text-sm text-slate-600">
+              <p className="text-sm text-[#5f7a77]">
                 Showing{" "}
                 <span className="font-semibold text-slate-900">
                   {(currentPage - 1) * PAGE_SIZE + 1}
@@ -493,7 +566,7 @@ Issue: ${disputeData.issue.trim()}`;
                   {Math.min(currentPage * PAGE_SIZE, filteredBookings.length)}
                 </span>{" "}
                 of{" "}
-                <span className="font-semibold text-slate-900">{filteredBookings.length}</span>{" "}
+                <span className="font-semibold text-[#143f3a]">{filteredBookings.length}</span>{" "}
                 bookings
               </p>
 
@@ -501,17 +574,17 @@ Issue: ${disputeData.issue.trim()}`;
                 <button
                   onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
                   disabled={currentPage === 1}
-                  className="rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
+                  className="rounded-xl border border-[#d7e6e1] bg-white px-4 py-2 text-sm font-medium text-[#4f6d69] transition hover:bg-[#f6fcfa] disabled:cursor-not-allowed disabled:opacity-50"
                 >
                   Back
                 </button>
-                <div className="rounded-xl bg-slate-100 px-4 py-2 text-sm font-semibold text-slate-700">
+                <div className="rounded-xl bg-[#edf7f4] px-4 py-2 text-sm font-semibold text-[#4f6d69]">
                   Page {currentPage} of {totalPages}
                 </div>
                 <button
                   onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
                   disabled={currentPage === totalPages}
-                  className="rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
+                  className="rounded-xl border border-[#d7e6e1] bg-white px-4 py-2 text-sm font-medium text-[#4f6d69] transition hover:bg-[#f6fcfa] disabled:cursor-not-allowed disabled:opacity-50"
                 >
                   Next
                 </button>
@@ -522,9 +595,9 @@ Issue: ${disputeData.issue.trim()}`;
 
         <div className="grid gap-4 lg:hidden">
           {paginatedBookings.length === 0 ? (
-            <div className="rounded-[24px] border border-dashed border-slate-300 bg-white p-8 text-center shadow-sm">
-              <p className="font-semibold text-slate-700">No bookings found</p>
-              <p className="mt-1 text-sm text-slate-500">
+            <div className="rounded-[24px] border border-dashed border-[#d4e5df] bg-white p-8 text-center shadow-sm">
+              <p className="font-semibold text-[#4f6d69]">No bookings found</p>
+              <p className="mt-1 text-sm text-[#78928f]">
                 Try a different filter or search term.
               </p>
             </div>
@@ -543,27 +616,27 @@ Issue: ${disputeData.issue.trim()}`;
               return (
                 <div
                   key={b._id}
-                  className="rounded-[24px] border border-slate-200 bg-white p-5 shadow-sm transition hover:shadow-md"
+                  className="bookings-card bookings-reveal rounded-[24px] border border-[#d4e5df] bg-white p-5 shadow-[0_10px_30px_rgba(8,47,43,0.08)] transition hover:shadow-[0_14px_36px_rgba(8,47,43,0.14)]"
                 >
                   <div className="flex items-start justify-between gap-3">
                     <div>
-                      <h3 className="text-lg font-bold text-slate-900">{b.serviceName}</h3>
-                      <p className="mt-1 flex items-center gap-2 text-sm text-slate-600">
-                        <FaUser className="text-teal-600" />
+                      <h3 className="text-lg font-bold text-[#143f3a]">{b.serviceName}</h3>
+                      <p className="mt-1 flex items-center gap-2 text-sm text-[#5f7a77]">
+                        <FaUser className="text-[#0f766e]" />
                         {b.provider?.basicInfo?.providerName || b.providerName}
                       </p>
                     </div>
                     <StatusBadge status={b.status} />
                   </div>
 
-                  <div className="mt-4 grid gap-3 text-sm text-slate-700">
+                  <div className="mt-4 grid gap-3 text-sm text-[#4f6d69]">
                     <InfoLine
-                      icon={<FaCalendarAlt className="text-teal-600" />}
+                      icon={<FaCalendarAlt className="text-[#0f766e]" />}
                       label="Date"
                       value={bookingDate.toLocaleDateString()}
                     />
                     <InfoLine
-                      icon={<FaClock className="text-teal-600" />}
+                      icon={<FaClock className="text-[#0f766e]" />}
                       label="Time"
                       value={bookingDate.toLocaleTimeString([], {
                         hour: "2-digit",
@@ -580,7 +653,7 @@ Issue: ${disputeData.issue.trim()}`;
                   <div className="mt-5 flex flex-wrap gap-2">
                     <button
                       onClick={() => setSelectedBooking(b)}
-                      className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-50"
+                      className="inline-flex items-center gap-2 rounded-xl border border-[#d7e6e1] bg-white px-4 py-2 text-sm font-medium text-[#4f6d69] transition hover:bg-[#f6fcfa]"
                     >
                       <FaInfoCircle />
                       Details
@@ -588,7 +661,7 @@ Issue: ${disputeData.issue.trim()}`;
 
                     <button
                       onClick={() => openChat(b)}
-                      className="inline-flex items-center gap-2 rounded-xl border border-sky-200 bg-sky-50 px-4 py-2 text-sm font-medium text-sky-700 transition hover:bg-sky-100"
+                      className="inline-flex items-center gap-2 rounded-xl border border-[#cfe1db] bg-[#f6fcfa] px-4 py-2 text-sm font-medium text-[#0f766e] transition hover:bg-[#edf8f5]"
                     >
                       <FaComments />
                       Chat
@@ -611,7 +684,7 @@ Issue: ${disputeData.issue.trim()}`;
                       <>
                         <button
                           onClick={() => openReschedule(b)}
-                          className="inline-flex items-center gap-2 rounded-xl border border-teal-200 bg-teal-50 px-4 py-2 text-sm font-medium text-teal-700 transition hover:bg-teal-100"
+                          className="inline-flex items-center gap-2 rounded-xl border border-[#cfe1db] bg-[#f6fcfa] px-4 py-2 text-sm font-medium text-[#0f766e] transition hover:bg-[#edf8f5]"
                         >
                           <FaRedo />
                           Reschedule
@@ -632,21 +705,21 @@ Issue: ${disputeData.issue.trim()}`;
           )}
 
           {filteredBookings.length > 0 && (
-            <div className="flex items-center justify-between rounded-[24px] border border-slate-200 bg-white px-4 py-4 shadow-sm">
+            <div className="flex items-center justify-between rounded-[24px] border border-[#d4e5df] bg-white px-4 py-4 shadow-sm">
               <button
                 onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
                 disabled={currentPage === 1}
-                className="rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
+                className="rounded-xl border border-[#d7e6e1] bg-white px-4 py-2 text-sm font-medium text-[#4f6d69] transition hover:bg-[#f6fcfa] disabled:cursor-not-allowed disabled:opacity-50"
               >
                 Back
               </button>
-              <div className="text-sm font-semibold text-slate-700">
+              <div className="text-sm font-semibold text-[#4f6d69]">
                 {currentPage} / {totalPages}
               </div>
               <button
                 onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
                 disabled={currentPage === totalPages}
-                className="rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
+                className="rounded-xl border border-[#d7e6e1] bg-white px-4 py-2 text-sm font-medium text-[#4f6d69] transition hover:bg-[#f6fcfa] disabled:cursor-not-allowed disabled:opacity-50"
               >
                 Next
               </button>
@@ -656,19 +729,19 @@ Issue: ${disputeData.issue.trim()}`;
       </div>
 
       {rescheduleBooking && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/55 p-4 backdrop-blur-sm">
-          <div className="relative w-full max-w-md rounded-[28px] bg-white p-6 shadow-2xl">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-[#041311]/50 p-4 backdrop-blur-sm transition-opacity duration-300">
+          <div className="relative w-full max-w-md rounded-2xl border border-[#d4e5df] bg-white p-6 shadow-2xl animate-in fade-in zoom-in-95 duration-300">
             <button
-              className="absolute right-4 top-4 text-slate-400 transition hover:text-slate-700"
+              className="absolute right-4 top-4 rounded-full p-2 text-[#7b9592] transition-all hover:bg-[#ecf5f2] hover:text-[#0f766e]"
               onClick={() => setRescheduleBooking(null)}
             >
-              <FaTimes />
+              <FaTimes className="text-lg" />
             </button>
 
-            <h2 className="text-xl font-bold text-slate-900">Reschedule Booking</h2>
-            <p className="mt-1 text-sm text-slate-500">{rescheduleBooking.serviceName}</p>
+            <h2 className="text-2xl font-black text-[#143f3a]">Reschedule Booking</h2>
+            <p className="mt-2 text-sm text-[#6f8885]">{rescheduleBooking.serviceName}</p>
 
-            <div className="mt-5 space-y-4">
+            <div className="mt-6 space-y-4">
               <FieldLabel label="New date" />
               <input
                 type="date"
@@ -676,7 +749,7 @@ Issue: ${disputeData.issue.trim()}`;
                 onChange={(e) =>
                   setRescheduleData({ ...rescheduleData, date: e.target.value })
                 }
-                className="w-full rounded-xl border border-slate-200 px-3 py-2 outline-none transition focus:border-teal-500 focus:ring-2 focus:ring-teal-100"
+                className="w-full rounded-xl border-2 border-[#d4e4df] bg-[#f7fcfa] px-4 py-3 text-[#203f3b] outline-none transition-all focus:border-[#0f766e] focus:bg-white focus:ring-4 focus:ring-[#0f766e]/15"
               />
 
               <FieldLabel label="New time" />
@@ -686,11 +759,11 @@ Issue: ${disputeData.issue.trim()}`;
                 onChange={(e) =>
                   setRescheduleData({ ...rescheduleData, time: e.target.value })
                 }
-                className="w-full rounded-xl border border-slate-200 px-3 py-2 outline-none transition focus:border-teal-500 focus:ring-2 focus:ring-teal-100"
+                className="w-full rounded-xl border-2 border-[#d4e4df] bg-[#f7fcfa] px-4 py-3 text-[#203f3b] outline-none transition-all focus:border-[#0f766e] focus:bg-white focus:ring-4 focus:ring-[#0f766e]/15"
               />
 
               <button
-                className="w-full rounded-xl bg-teal-600 px-4 py-2.5 font-medium text-white shadow-sm transition hover:bg-teal-700"
+                className="mt-2 w-full rounded-xl bg-gradient-to-r from-[#0f766e] to-[#0d6b64] px-4 py-3 font-semibold text-white shadow-md transition-all hover:shadow-lg hover:scale-105"
                 onClick={submitReschedule}
               >
                 Confirm Reschedule
@@ -701,22 +774,22 @@ Issue: ${disputeData.issue.trim()}`;
       )}
 
       {disputeBooking && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/55 p-4 backdrop-blur-sm">
-          <div className="relative w-full max-w-lg rounded-[28px] bg-white p-6 shadow-2xl">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-[#041311]/50 p-4 backdrop-blur-sm transition-opacity duration-300">
+          <div className="relative w-full max-h-[90vh] max-w-lg overflow-hidden rounded-2xl border border-[#d4e5df] bg-white p-6 shadow-2xl animate-in fade-in zoom-in-95 duration-300">
             <button
-              className="absolute right-4 top-4 text-slate-400 transition hover:text-slate-700"
+              className="absolute right-4 top-4 rounded-full p-2 text-[#7b9592] transition-all hover:bg-[#ecf5f2] hover:text-[#0f766e] disabled:cursor-not-allowed"
               onClick={resetDisputeModal}
               disabled={disputeBusyId === disputeBooking._id}
             >
-              <FaTimes />
+              <FaTimes className="text-lg" />
             </button>
 
-            <h2 className="text-xl font-bold text-slate-900">Raise a Dispute</h2>
-            <p className="mt-1 text-sm text-slate-500">
-              Choose a category from the schema, then describe the issue.
+            <h2 className="text-2xl font-black text-[#143f3a]">Raise a Dispute</h2>
+            <p className="mt-2 text-sm text-[#6f8885]">
+              Choose a category and describe the issue in detail.
             </p>
 
-            <div className="mt-5 space-y-4">
+            <div className="mt-6 space-y-4 overflow-y-auto" style={{ maxHeight: "calc(90vh - 200px)" }}>
               <div>
                 <FieldLabel label="Category" />
                 <select
@@ -727,7 +800,7 @@ Issue: ${disputeData.issue.trim()}`;
                       category: e.target.value,
                     }))
                   }
-                  className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 outline-none transition focus:border-teal-500 focus:ring-2 focus:ring-teal-100"
+                  className="w-full rounded-xl border-2 border-[#d4e4df] bg-[#f7fcfa] px-4 py-3 text-[#203f3b] outline-none transition-all focus:border-[#0f766e] focus:bg-white focus:ring-4 focus:ring-[#0f766e]/15 disabled:cursor-not-allowed"
                   disabled={disputeBusyId === disputeBooking._id}
                 >
                   <option value="">Select category</option>
@@ -751,69 +824,75 @@ Issue: ${disputeData.issue.trim()}`;
                   }
                   placeholder="Describe what happened..."
                   rows={5}
-                  className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 outline-none transition placeholder:text-slate-400 focus:border-teal-500 focus:ring-2 focus:ring-teal-100"
+                  className="w-full rounded-xl border-2 border-[#d4e4df] bg-[#f7fcfa] px-4 py-3 text-[#203f3b] outline-none transition-all placeholder:text-[#8aa5a1] focus:border-[#0f766e] focus:bg-white focus:ring-4 focus:ring-[#0f766e]/15 disabled:cursor-not-allowed"
                   disabled={disputeBusyId === disputeBooking._id}
                 />
               </div>
 
-              <div className="rounded-[22px] border border-slate-200 bg-slate-50 p-4">
-                <p className="text-sm font-semibold text-slate-900">Service and parties involved</p>
-                <div className="mt-3 space-y-2 text-sm text-slate-700">
-                  <p>
-                    <span className="font-medium text-slate-900">Service:</span> {disputeServiceName}
-                  </p>
-                  <p>
-                    <span className="font-medium text-slate-900">Customer:</span> {disputeCustomerName}
-                  </p>
-                  <p>
-                    <span className="font-medium text-slate-900">Provider:</span> {disputeProviderName}
-                  </p>
+              <div className="rounded-2xl border border-[#d4e5df] bg-[#f8fcfb] p-5">
+                <p className="text-sm font-semibold text-[#143f3a]">Service and parties involved</p>
+                <div className="mt-4 space-y-3 text-sm text-[#4f6d69]">
+                  <div className="flex items-center justify-between rounded-lg bg-white px-3 py-2.5">
+                    <span className="font-medium text-[#143f3a]">Service:</span>
+                    <span className="text-right font-semibold text-[#0f766e]">{disputeServiceName}</span>
+                  </div>
+                  <div className="flex items-center justify-between rounded-lg bg-white px-3 py-2.5">
+                    <span className="font-medium text-[#143f3a]">Customer:</span>
+                    <span className="text-right font-semibold text-[#0f766e]">{disputeCustomerName}</span>
+                  </div>
+                  <div className="flex items-center justify-between rounded-lg bg-white px-3 py-2.5">
+                    <span className="font-medium text-[#143f3a]">Provider:</span>
+                    <span className="text-right font-semibold text-[#0f766e]">{disputeProviderName}</span>
+                  </div>
                 </div>
               </div>
 
-              <button
-                className="w-full rounded-xl bg-amber-600 px-4 py-2.5 font-medium text-white shadow-sm transition hover:bg-amber-700 disabled:cursor-not-allowed disabled:opacity-60"
-                onClick={submitDispute}
-                disabled={disputeBusyId === disputeBooking._id}
-              >
-                {disputeBusyId === disputeBooking._id ? "Submitting..." : "Submit Dispute"}
-              </button>
+              <div className="space-y-3 border-t border-[#d4e5df] pt-5">
+                <button
+                  className="w-full rounded-xl bg-gradient-to-r from-amber-600 to-amber-500 px-4 py-3 font-semibold text-white shadow-md transition-all hover:shadow-lg hover:scale-105 disabled:cursor-not-allowed disabled:opacity-60"
+                  onClick={submitDispute}
+                  disabled={disputeBusyId === disputeBooking._id}
+                >
+                  {disputeBusyId === disputeBooking._id ? "Submitting..." : "Submit Dispute"}
+                </button>
 
-              <button
-                className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 font-medium text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
-                onClick={resetDisputeModal}
-                disabled={disputeBusyId === disputeBooking._id}
-              >
-                Cancel
-              </button>
+                <button
+                  className="w-full rounded-xl border-2 border-[#d4e5df] bg-white px-4 py-3 font-semibold text-[#4f6d69] transition-all hover:bg-[#f8fcfb] disabled:cursor-not-allowed disabled:opacity-60"
+                  onClick={resetDisputeModal}
+                  disabled={disputeBusyId === disputeBooking._id}
+                >
+                  Cancel
+                </button>
+              </div>
             </div>
           </div>
         </div>
       )}
 
       {selectedBooking && (
-        <div className="fixed inset-0 z-40 flex">
+        <div className="fixed inset-0 z-40 flex items-center justify-center bg-[#041311]/50 p-4 backdrop-blur-sm transition-opacity duration-300">
           <div
-            className="absolute inset-0 bg-slate-950/45 backdrop-blur-[2px]"
+            className="absolute inset-0"
             onClick={() => setSelectedBooking(null)}
           />
-          <div className="relative ml-auto flex h-full w-full max-w-2xl flex-col overflow-y-auto bg-white shadow-2xl">
-            <div className="sticky top-0 border-b border-slate-200 bg-white px-6 py-4">
+          <div className="relative flex h-auto max-h-[90vh] w-full max-w-3xl flex-col overflow-hidden rounded-2xl border border-[#d4e5df] bg-white shadow-2xl animate-in fade-in zoom-in-95 duration-300">
+            <div className="sticky top-0 border-b border-[#dce9e4] bg-gradient-to-r from-[#f8fcfb] to-white px-6 py-5">
               <button
-                className="absolute right-4 top-4 text-slate-400 transition hover:text-slate-700"
+                  className="absolute right-4 top-4 rounded-full p-2 text-[#7b9592] transition-all hover:bg-[#ecf5f2] hover:text-[#0f766e]"
                 onClick={() => setSelectedBooking(null)}
               >
-                <FaTimes />
+                <FaTimes className="text-lg" />
               </button>
-              <h2 className="pr-8 text-xl font-bold text-slate-900">Booking Details</h2>
+                <h2 className="pr-8 text-2xl font-black text-[#143f3a]">Booking Details</h2>
+                <p className="mt-1 text-sm text-[#5f7a77]">Complete information and actions for this booking</p>
             </div>
 
-            <div className="space-y-4 px-6 py-6">
-              <div className="rounded-[22px] bg-gradient-to-r from-teal-50 to-cyan-50 p-4">
-                <h3 className="text-lg font-semibold text-slate-900">
+            <div className="space-y-5 overflow-y-auto px-6 py-6">
+                <div className="rounded-[22px] border border-[#d4e5df] bg-gradient-to-r from-[#eef9f5] to-[#f8fcfb] p-4">
+                  <h3 className="text-lg font-semibold text-[#143f3a]">
                   {selectedBooking.serviceName}
                 </h3>
-                <p className="mt-1 text-sm text-slate-600">
+                  <p className="mt-1 text-sm text-[#5f7a77]">
                   {selectedBooking.provider?.basicInfo?.providerName || selectedBooking.providerName}
                 </p>
               </div>
@@ -840,34 +919,78 @@ Issue: ${disputeData.issue.trim()}`;
                 }
               />
 
-              <div className="rounded-[22px] border border-slate-200 bg-slate-50 p-4">
+              <div className="rounded-[22px] border border-[#d4e5df] bg-[#f8fcfb] p-4">
                 <div className="flex items-center justify-between gap-3">
-                  <h3 className="text-base font-semibold text-slate-900">Chat section</h3>
+                  <h3 className="text-base font-semibold text-[#143f3a]">Chat section</h3>
                   <button
                     onClick={() => openChat(selectedBooking)}
-                    className="inline-flex items-center gap-2 rounded-xl border border-sky-200 bg-sky-50 px-3 py-2 text-sm font-medium text-sky-700 transition hover:bg-sky-100"
+                    className="inline-flex items-center gap-2 rounded-xl border border-[#cfe1db] bg-[#f6fcfa] px-3 py-2 text-sm font-medium text-[#0f766e] transition hover:bg-[#edf8f5]"
                   >
                     <FaComments />
                     Open chat
                   </button>
                 </div>
-                <p className="mt-2 text-sm text-slate-600">
+                <p className="mt-2 text-sm text-[#5f7a77]">
                   Use this booking chat to speak with the provider about timing, updates, and support.
                 </p>
               </div>
 
-              <button
-                onClick={() => openDisputeFromBooking(selectedBooking)}
-                disabled={disputeBusyId === selectedBooking._id}
-                className="inline-flex w-full items-center justify-center gap-2 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm font-semibold text-amber-700 transition hover:bg-amber-100 disabled:cursor-not-allowed disabled:opacity-60"
-              >
-                <FaExclamationTriangle />
-                {selectedBooking.disputeId || selectedBooking.dispute?._id
-                  ? "View Dispute"
-                  : disputeBusyId === selectedBooking._id
-                  ? "Opening..."
-                  : "Raise Dispute"}
-              </button>
+              <div className="rounded-2xl border border-[#d4e5df] bg-gradient-to-r from-[#f8fcfb] to-[#f0fbf9] p-5">
+                <h3 className="mb-4 text-base font-bold text-[#143f3a]">Quick Actions</h3>
+                <div className="flex flex-col gap-3">
+                  {selectedBooking.status !== "completed" && (
+                    <>
+                      {(() => {
+                        const bookingDate = new Date(selectedBooking.scheduledAt);
+                        const isUpcoming =
+                          ["pending", "accepted", "in_progress"].includes(
+                            String(selectedBooking.status).toLowerCase()
+                          ) && bookingDate > new Date();
+
+                        return isUpcoming ? (
+                          <>
+                            <button
+                              onClick={() => openReschedule(selectedBooking)}
+                              className="flex items-center justify-center gap-2 rounded-xl border border-[#0f766e]/20 bg-[#f0fbf9] px-4 py-3 text-sm font-semibold text-[#0f766e] transition-all hover:border-[#0f766e]/40 hover:bg-[#edf8f5]"
+                            >
+                              <FaRedo />
+                              Reschedule
+                            </button>
+                            <button
+                              onClick={() => handleCancel(selectedBooking._id)}
+                              className="flex items-center justify-center gap-2 rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm font-semibold text-rose-700 transition-all hover:bg-rose-100"
+                            >
+                              <FaTimes />
+                              Cancel
+                            </button>
+                          </>
+                        ) : null;
+                      })()}
+                    </>
+                  )}
+                  
+                  <button
+                    onClick={() => openChat(selectedBooking)}
+                    className="flex items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-[#0f766e] to-[#0d6b64] px-4 py-3 text-sm font-semibold text-white shadow-md transition-all hover:shadow-lg hover:scale-105"
+                  >
+                    <FaComments />
+                    Open Chat
+                  </button>
+                  
+                  <button
+                    onClick={() => openDisputeFromBooking(selectedBooking)}
+                    disabled={disputeBusyId === selectedBooking._id}
+                    className="flex items-center justify-center gap-2 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm font-semibold text-amber-700 transition-all hover:bg-amber-100 disabled:cursor-not-allowed disabled:opacity-60"
+                  >
+                    <FaExclamationTriangle />
+                    {selectedBooking.disputeId || selectedBooking.dispute?._id
+                      ? "View Dispute"
+                      : disputeBusyId === selectedBooking._id
+                      ? "Opening..."
+                      : "Raise Dispute"}
+                  </button>
+                </div>
+              </div>
             </div>
           </div>
         </div>
@@ -889,25 +1012,77 @@ const Th = ({ children, align = "left" }) => {
   const alignClass = align === "right" ? "text-right" : "text-left";
   return (
     <th
-      className={`px-5 py-4 ${alignClass} text-xs font-semibold uppercase tracking-wider text-slate-500`}
+      className={`px-5 py-4 ${alignClass} text-xs font-semibold uppercase tracking-wider text-[#6f8885]`}
     >
       {children}
     </th>
   );
 };
 
+const STAT_TONES = {
+  teal: {
+    ring: "ring-[#0f766e]/20",
+    bg: "from-[#ecfdf9] via-white to-white",
+    icon: "bg-[#0f766e]/10 text-[#0f766e]",
+    title: "text-[#4f6d69]",
+    value: "text-[#0f2f2b]",
+  },
+  sky: {
+    ring: "ring-[#0ea5e9]/15",
+    bg: "from-[#eff8ff] via-white to-white",
+    icon: "bg-[#0ea5e9]/10 text-[#0369a1]",
+    title: "text-[#4f6d69]",
+    value: "text-[#0f2f2b]",
+  },
+  emerald: {
+    ring: "ring-[#10b981]/15",
+    bg: "from-[#ecfdf5] via-white to-white",
+    icon: "bg-[#10b981]/10 text-[#047857]",
+    title: "text-[#4f6d69]",
+    value: "text-[#0f2f2b]",
+  },
+  amber: {
+    ring: "ring-[#f59e0b]/15",
+    bg: "from-[#fffbeb] via-white to-white",
+    icon: "bg-[#f59e0b]/10 text-[#b45309]",
+    title: "text-[#4f6d69]",
+    value: "text-[#0f2f2b]",
+  },
+};
+
+const StatCard = ({ title, value, icon, tone }) => {
+  const styles = STAT_TONES[tone] || STAT_TONES.teal;
+  return (
+    <div
+      className={`bookings-stat-card bookings-reveal rounded-[22px] border border-[#d4e5df] bg-gradient-to-br ${styles.bg} p-4 shadow-[0_12px_30px_rgba(8,47,43,0.08)] ring-1 ${styles.ring}`}
+    >
+      <div className="flex items-center justify-between">
+        <div>
+          <p className={`text-xs font-semibold uppercase tracking-[0.26em] ${styles.title}`}>
+            {title}
+          </p>
+          <p className={`mt-2 text-2xl font-black ${styles.value}`}>{value}</p>
+        </div>
+        <div className={`flex h-11 w-11 items-center justify-center rounded-2xl ${styles.icon}`}>
+          {icon}
+        </div>
+      </div>
+    </div>
+  );
+};
+
 const InfoLine = ({ icon, label, value }) => (
-  <div className="flex items-center justify-between rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">
-    <div className="flex items-center gap-2 text-sm text-slate-600">
-      {icon ? icon : <span className="h-2 w-2 rounded-full bg-slate-400" />}
+  <div className="flex items-center justify-between rounded-xl border border-[#d4e5df] bg-[#f8fcfb] px-4 py-3">
+    <div className="flex items-center gap-2 text-sm text-[#5f7a77]">
+      {icon ? icon : <span className="h-2 w-2 rounded-full bg-[#90a9a6]" />}
       <span>{label}</span>
     </div>
-    <span className="text-sm font-semibold text-slate-900">{value}</span>
+    <span className="text-sm font-semibold text-[#143f3a]">{value}</span>
   </div>
 );
 
 const FieldLabel = ({ label }) => (
-  <label className="mb-1 block text-sm font-medium text-slate-700">{label}</label>
+  <label className="mb-1 block text-sm font-medium text-[#4f6d69]">{label}</label>
 );
 
 const StatusBadge = ({ status }) => {
@@ -933,9 +1108,9 @@ const StatusBadge = ({ status }) => {
 };
 
 const DetailRow = ({ label, value }) => (
-  <div className="flex items-start justify-between gap-4 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">
-    <span className="text-sm font-medium text-slate-600">{label}</span>
-    <span className="text-right text-sm font-semibold text-slate-900">{value}</span>
+  <div className="flex items-start justify-between gap-4 rounded-xl border border-[#d4e5df] bg-[#f8fcfb] px-4 py-3">
+    <span className="text-sm font-medium text-[#5f7a77]">{label}</span>
+    <span className="text-right text-sm font-semibold text-[#143f3a]">{value}</span>
   </div>
 );
 
@@ -944,30 +1119,33 @@ const ChatBookingModal = ({ booking, token, userId, onClose }) => {
     booking?.provider?.basicInfo?.providerName || booking?.providerName || "Provider";
 
   return (
-    <div className="fixed inset-0 z-[60] bg-black/45 p-0 sm:p-4">
-      <div className="flex h-[100dvh] w-full flex-col overflow-hidden bg-white shadow-2xl sm:mx-auto sm:h-[85vh] sm:w-11/12 sm:max-w-5xl sm:rounded-2xl">
-        <div className="flex shrink-0 items-center justify-between border-b px-4 py-3 sm:px-6 sm:py-4">
-          <div className="min-w-0">
-            <h2 className="truncate text-base font-bold text-teal-600 sm:text-lg">
+    <div className="fixed inset-0 z-[60] flex items-center justify-center bg-[#041311]/50 p-0 backdrop-blur-sm transition-opacity duration-300 sm:p-4">
+      <div className="flex h-[100dvh] w-full max-h-[95vh] flex-col overflow-hidden rounded-none border-t border-[#d4e5df] bg-white shadow-2xl transition-all duration-300 sm:max-h-[90vh] sm:w-11/12 sm:max-w-6xl sm:rounded-2xl">
+        <div className="sticky top-0 flex shrink-0 items-center justify-between border-b border-[#dde8e4] bg-gradient-to-r from-[#f8fcfb] to-white px-5 py-4 sm:px-6 sm:py-5">
+          <div className="min-w-0 flex-1">
+            <h2 className="truncate text-lg font-black text-[#0f766e] sm:text-xl">
               Chat with {providerName}
             </h2>
             {booking?.serviceName && (
-              <p className="truncate text-xs text-gray-500 sm:text-sm">{booking.serviceName}</p>
+              <p className="mt-1 truncate text-xs text-[#688380] sm:text-sm">{booking.serviceName}</p>
             )}
           </div>
 
           <button
-            className="ml-4 rounded-full p-2 text-gray-600 hover:bg-gray-100 hover:text-gray-900"
+            className="ml-4 rounded-full p-2 text-[#607a77] transition-all hover:bg-[#ecf5f2] hover:text-[#0f766e]"
             onClick={onClose}
             aria-label="Close chat"
+            title="Close chat"
           >
-            <FaTimes />
+            <FaTimes className="text-lg" />
           </button>
         </div>
 
-        <div className="min-h-0 flex-1 overflow-hidden p-2 sm:p-4">
-          <div className="h-full min-h-0 overflow-hidden rounded-xl border bg-white">
-            <Chat bookingId={booking?._id} token={token} userId={userId} />
+        <div className="min-h-0 flex-1 overflow-hidden p-3 sm:p-4">
+          <div className="h-full min-h-0 flex flex-col overflow-hidden rounded-xl border border-[#d6e6e0] bg-white">
+            <div className="min-h-0 flex-1 overflow-y-auto">
+              <Chat bookingId={booking?._id} token={token} userId={userId} />
+            </div>
           </div>
         </div>
       </div>

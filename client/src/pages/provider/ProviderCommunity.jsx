@@ -1,5 +1,7 @@
 // ProviderCommunity.jsx
 import { useState, useEffect } from "react";
+import { FaHeart, FaRegCommentDots, FaPaperPlane, FaImage } from "react-icons/fa";
+import "../../styles/providerCommunity.css";
 
 const API = import.meta.env.VITE_API_URL || "http://localhost:5000/api";
 
@@ -121,63 +123,138 @@ export default function ProviderCommunity() {
   };
 
   return (
-    <div className="max-w-4xl mx-auto py-10 px-6">
-      <h1 className="text-3xl font-bold text-sky-500 mb-6">Provider Community</h1>
+    <div className="provider-community-page">
+      <div className="provider-community-shell">
+        <div className="community-hero">
+          <div>
+            <p className="community-kicker">Provider Network</p>
+            <h1 className="community-title">Provider Community</h1>
+            <p className="community-subtitle">
+              Swap tips, share wins, and help each other solve client challenges faster.
+            </p>
+          </div>
+          <div className="community-hero-card">
+            <p className="community-hero-label">Engagement</p>
+            <p className="community-hero-value">{posts.length}</p>
+            <p className="community-hero-caption">Active discussions</p>
+          </div>
+        </div>
 
-      {error && <div className="mb-4 text-red-500 font-semibold">{error}</div>}
+        <div className="community-highlights">
+          <div className="community-highlight-card">
+            <p className="community-highlight-label">Weekly tips</p>
+            <p className="community-highlight-value">Share your best practices</p>
+          </div>
+          <div className="community-highlight-card">
+            <p className="community-highlight-label">Growth</p>
+            <p className="community-highlight-value">Learn from top providers</p>
+          </div>
+          <div className="community-highlight-card">
+            <p className="community-highlight-label">Support</p>
+            <p className="community-highlight-value">Get answers fast</p>
+          </div>
+        </div>
 
-      {/* CREATE POST */}
-      <div className="bg-white border rounded-lg shadow p-6 mb-8">
-        <h2 className="font-semibold mb-3">Start a Discussion</h2>
-        <textarea
-          value={post}
-          onChange={(e) => setPost(e.target.value)}
-          placeholder="Share a tip, ask a question, or start a discussion..."
-          className="w-full border rounded-lg p-3 h-24 focus:outline-none focus:ring-2 focus:ring-sky-500"
-        />
-        <input
-          type="file"
-          accept="image/*"
-          onChange={handleImageChange}
-          className="mt-4 text-sm"
-        />
-        {preview && (
-          <img
-            src={preview}
-            alt="preview"
-            className="mt-4 rounded-lg border object-contain w-32 h-32 cursor-pointer"
-            onClick={() => setModalImage(preview)}
-          />
-        )}
-        <button
-          onClick={handlePost}
-          disabled={!post || loading}
-          className="mt-4 bg-sky-500 text-white px-5 py-2 rounded-lg hover:bg-sky-600 transition disabled:opacity-50"
-        >
-          {loading ? "Posting..." : "Post"}
-        </button>
-      </div>
+        {error && <div className="community-error">{error}</div>}
 
-      {/* POSTS */}
-      <div className="space-y-6">
-        {posts.map((p) => (
-          <CommunityPost
-            key={p._id}
-            post={p}
-            likePost={likePost}
-            addComment={addComment}
-            setModalImage={setModalImage}
-          />
-        ))}
+        <div className="community-layout">
+          <aside className="community-sidebar">
+            <div className="community-filters">
+              <button type="button" className="community-filter community-filter-active">
+                Latest
+              </button>
+              <button type="button" className="community-filter">
+                Most Liked
+              </button>
+              <button type="button" className="community-filter">
+                Tips & Tricks
+              </button>
+              <button type="button" className="community-filter">
+                Questions
+              </button>
+            </div>
+
+            {/* CREATE POST */}
+            <div className="community-composer">
+              <div className="community-composer-head">
+                <div>
+                  <h2 className="community-composer-title">Start a Discussion</h2>
+                  <p className="community-composer-subtitle">
+                    Share updates, questions, or tips with the provider network.
+                  </p>
+                </div>
+                <div className="community-composer-badge">Live</div>
+              </div>
+
+              <textarea
+                value={post}
+                onChange={(e) => setPost(e.target.value)}
+                placeholder="Share a tip, ask a question, or start a discussion..."
+                className="community-textarea"
+              />
+
+              <div className="community-composer-actions">
+                <label className="community-upload">
+                  <FaImage />
+                  Add photo
+                  <input
+                    type="file"
+                    accept="image/*"
+                    onChange={handleImageChange}
+                    className="sr-only"
+                  />
+                </label>
+
+                <button
+                  onClick={handlePost}
+                  disabled={!post || loading}
+                  className="community-post-button"
+                >
+                  <FaPaperPlane />
+                  {loading ? "Posting..." : "Post"}
+                </button>
+              </div>
+
+              {preview && (
+                <div className="community-preview" onClick={() => setModalImage(preview)}>
+                  <img src={preview} alt="preview" />
+                  <span>Preview</span>
+                </div>
+              )}
+            </div>
+          </aside>
+
+          <section className="community-feed-panel">
+            <div className="community-feed-header">
+              <div>
+                <p className="community-feed-kicker">Community Feed</p>
+                <h2 className="community-feed-title">Latest Provider Updates</h2>
+              </div>
+              <div className="community-feed-chip">{posts.length} posts</div>
+            </div>
+
+            <div className="community-feed">
+              {posts.map((p) => (
+                <CommunityPost
+                  key={p._id}
+                  post={p}
+                  likePost={likePost}
+                  addComment={addComment}
+                  setModalImage={setModalImage}
+                />
+              ))}
+            </div>
+          </section>
+        </div>
       </div>
 
       {/* MODAL */}
       {modalImage && (
-        <div className="fixed inset-0 bg-black bg-opacity-70 flex items-center justify-center z-50">
-          <div className="relative">
-            <img src={modalImage} alt="Enlarged" className="max-h-[90vh] max-w-[90vw] rounded-lg" />
+        <div className="community-modal">
+          <div className="community-modal-content">
+            <img src={modalImage} alt="Enlarged" className="community-modal-image" />
             <button
-              className="absolute top-2 right-2 bg-gray-200 rounded-full p-1 text-black font-bold hover:bg-gray-300"
+              className="community-modal-close"
               onClick={() => setModalImage(null)}
             >
               ✕
@@ -197,68 +274,65 @@ function CommunityPost({ post, likePost, addComment, setModalImage }) {
   const authorPhoto = post.authorPhoto || "";
 
   return (
-    <div className="bg-white border rounded-lg shadow p-5">
+    <div className="community-post">
       {/* AUTHOR */}
-      <div className="flex items-center gap-3">
+      <div className="community-post-header">
         {authorPhoto ? (
-          <img src={authorPhoto} className="w-10 h-10 rounded-full object-cover" />
+          <img src={authorPhoto} className="community-avatar" />
         ) : (
-          <div className="w-10 h-10 rounded-full bg-gray-300 flex items-center justify-center text-xs text-gray-600">
+          <div className="community-avatar-fallback">
             {authorName[0]}
           </div>
         )}
         <div>
-          <p className="font-semibold">{authorName}</p>
-          <p className="text-xs text-gray-400">{new Date(post.createdAt).toLocaleString()}</p>
+          <p className="community-author">{authorName}</p>
+          <p className="community-date">{new Date(post.createdAt).toLocaleString()}</p>
         </div>
+        <span className="community-tag">Provider</span>
       </div>
 
       {/* CONTENT */}
-      <p className="text-gray-700 mt-3">{post.content}</p>
+      <p className="community-content">{post.content}</p>
 
       {/* IMAGE */}
       {post.image && (
-        <img
-          src={post.image}
-          alt="post"
-          className="mt-4 w-32 h-32 object-contain rounded-lg border cursor-pointer"
-          onClick={() => setModalImage(post.image)}
-        />
+        <div className="community-post-image" onClick={() => setModalImage(post.image)}>
+          <img src={post.image} alt="post" />
+        </div>
       )}
 
       {/* ACTIONS */}
-      <div className="flex gap-6 mt-4 text-sm text-gray-500 items-center">
-        <button onClick={() => likePost(post._id)} className="hover:text-sky-500">
-          👍 {post.likes.length} Like
+      <div className="community-actions">
+        <button onClick={() => likePost(post._id)} className="community-action">
+          <FaHeart /> {post.likes.length} Like
         </button>
 
-        {/* COMMENT TOGGLE */}
         <button
           onClick={() => setShowComments(!showComments)}
-          className="hover:text-sky-500"
+          className="community-action"
         >
-          💬 {post.comments.length} Comment{post.comments.length !== 1 ? "s" : ""}
+          <FaRegCommentDots /> {post.comments.length} Comment{post.comments.length !== 1 ? "s" : ""}
         </button>
       </div>
 
       {/* COMMENTS */}
       {showComments && (
-        <div className="mt-4 space-y-2">
+        <div className="community-comments">
           {post.comments.map((c, i) => {
             const commenterName = c.name || "Unknown Provider";
             return (
-              <div key={i} className="text-sm bg-gray-100 p-2 rounded">
+              <div key={i} className="community-comment">
                 <b>{commenterName}</b>: {c.text}
               </div>
             );
           })}
           {/* COMMENT INPUT */}
-          <div className="flex gap-2 mt-3">
+          <div className="community-comment-input">
             <input
               value={comment}
               onChange={(e) => setComment(e.target.value)}
               placeholder="Write a comment..."
-              className="flex-1 border rounded-lg px-3 py-1 text-sm"
+              className="community-input"
             />
             <button
               onClick={() => {
@@ -266,8 +340,9 @@ function CommunityPost({ post, likePost, addComment, setModalImage }) {
                 addComment(post._id, comment);
                 setComment("");
               }}
-              className="bg-sky-500 text-white px-3 rounded"
+              className="community-send"
             >
+              <FaPaperPlane />
               Send
             </button>
           </div>

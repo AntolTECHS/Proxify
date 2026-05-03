@@ -1,12 +1,24 @@
 // src/pages/provider/ProviderJobs.jsx
-import { useEffect, useMemo, useState } from "react";
+import { memo, useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import {
   FaTimes,
   FaMapMarkerAlt,
-  FaMap,
-  FaEyeSlash,
   FaExclamationTriangle,
+  FaSearch,
+  FaBoxOpen,
+  FaFilter,
+  FaClock,
+  FaBriefcase,
+  FaHourglassHalf,
+  FaCheckCircle,
+  FaTimesCircle,
+  FaUser,
+  FaMoneyBillWave,
+  FaPhone,
+  FaTag,
+  FaExpand,
+  FaCompress,
 } from "react-icons/fa";
 import { useAuth } from "../../context/AuthContext.jsx";
 import Chat from "../../components/Chat/Chat.jsx";
@@ -14,13 +26,13 @@ import { createDispute } from "../../api/disputeApi.js";
 
 import {
   MapContainer,
-  Marker,
-  Polyline,
   TileLayer,
   useMap,
 } from "react-leaflet";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
+import "leaflet-routing-machine";
+import "leaflet-routing-machine/dist/leaflet-routing-machine.css";
 
 import markerIcon2x from "leaflet/dist/images/marker-icon-2x.png";
 import markerIcon from "leaflet/dist/images/marker-icon.png";
@@ -37,6 +49,46 @@ const DISPUTE_OPTIONS = [
   { value: "other", label: "Other" },
 ];
 
+const FILTER_TABS = [
+  { value: "all", label: "All" },
+  { value: "pending", label: "Pending" },
+  { value: "accepted", label: "Accepted" },
+  { value: "completed", label: "Completed" },
+];
+
+const STATUS_META = {
+  pending: {
+    label: "Pending",
+    className: "bg-yellow-50 text-yellow-700 ring-yellow-200",
+    icon: FaHourglassHalf,
+  },
+  accepted: {
+    label: "Accepted",
+    className: "bg-blue-50 text-blue-700 ring-blue-200",
+    icon: FaBriefcase,
+  },
+  in_progress: {
+    label: "In progress",
+    className: "bg-purple-50 text-purple-700 ring-purple-200",
+    icon: FaBriefcase,
+  },
+  completed: {
+    label: "Completed",
+    className: "bg-emerald-50 text-emerald-700 ring-emerald-200",
+    icon: FaCheckCircle,
+  },
+  cancelled: {
+    label: "Cancelled",
+    className: "bg-rose-50 text-rose-700 ring-rose-200",
+    icon: FaTimesCircle,
+  },
+  rejected: {
+    label: "Rejected",
+    className: "bg-rose-50 text-rose-700 ring-rose-200",
+    icon: FaTimesCircle,
+  },
+};
+
 /* ================= Leaflet Fix ================= */
 delete L.Icon.Default.prototype._getIconUrl;
 L.Icon.Default.mergeOptions({
@@ -52,18 +104,6 @@ const formatKES = (amount) =>
     currency: "KES",
     maximumFractionDigits: 0,
   }).format(Number(amount || 0));
-
-function RecenterMap({ bounds }) {
-  const map = useMap();
-
-  useEffect(() => {
-    if (bounds?.length === 2) {
-      map.fitBounds(bounds, { padding: [50, 50] });
-    }
-  }, [bounds, map]);
-
-  return null;
-}
 
 const toFiniteNumber = (value) => {
   const num = Number(value);
@@ -118,10 +158,15 @@ export default function ProviderJobs() {
   const [modalJob, setModalJob] = useState(null);
   const [loading, setLoading] = useState(true);
   const [showChat, setShowChat] = useState(false);
-  const [showMap, setShowMap] = useState(true);
   const [error, setError] = useState("");
   const [providerCoords, setProviderCoords] = useState(null);
   const [disputeBusyId, setDisputeBusyId] = useState(null);
+  const [searchTerm, setSearchTerm] = useState("");
+  const [activeTab, setActiveTab] = useState("all");
+  const [currentPage, setCurrentPage] = useState(1);
+  const [detailsLoading, setDetailsLoading] = useState(false);
+
+  const jobsPerPage = 6;
 
   const [disputeJob, setDisputeJob] = useState(null);
   const [disputeData, setDisputeData] = useState({
@@ -329,37 +374,11 @@ Issue: ${disputeData.issue.trim()}`;
     }
   };
 
-  /* ================= UI Helpers ================= */
-  const statusColor = (status) => {
-    if (status === "pending") return "text-yellow-600";
-    if (status === "accepted") return "text-blue-600";
-    if (status === "in_progress") return "text-purple-600";
-    if (status === "completed") return "text-green-600";
-    if (status === "cancelled") return "text-red-600";
-    return "text-gray-600";
-  };
-
-  const paymentColor = (paymentStatus) => {
-    if (paymentStatus === "paid") return "text-green-600";
-    if (paymentStatus === "unpaid") return "text-red-600";
-    if (paymentStatus === "refunded") return "text-blue-600";
-    return "text-gray-600";
-  };
-
   const modalCoords = getBookingCoords(modalJob);
-
-  const routeBounds = useMemo(() => {
-    if (!providerCoords || !modalCoords) return null;
-    return [
-      [providerCoords.lat, providerCoords.lng],
-      [modalCoords.lat, modalCoords.lng],
-    ];
-  }, [providerCoords, modalCoords]);
 
   const closeModal = () => {
     setModalJob(null);
     setShowChat(false);
-    setShowMap(true);
   };
 
   const renderDisputeButtonLabel = (job) => {
@@ -375,10 +394,122 @@ Issue: ${disputeData.issue.trim()}`;
   const disputeProviderName =
     user?.name || user?.basicInfo?.providerName || "Provider";
 
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [activeTab, searchTerm]);
+
+  useEffect(() => {
+    if (!modalJob) {
+      setDetailsLoading(false);
+      return;
+    }
+
+    setDetailsLoading(true);
+    const timer = setTimeout(() => {
+      setDetailsLoading(false);
+    }, 200);
+
+    return () => clearTimeout(timer);
+  }, [modalJob]);
+
+  useEffect(() => {
+    if (!modalJob) return undefined;
+
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+
+    return () => {
+      document.body.style.overflow = previousOverflow;
+    };
+  }, [modalJob]);
+
+  const filteredJobs = useMemo(() => {
+    const normalizedQuery = searchTerm.trim().toLowerCase();
+
+    return jobs.filter((job) => {
+      const statusMatch =
+        activeTab === "all" ? true : job.status === activeTab;
+
+      if (!statusMatch) return false;
+
+      if (!normalizedQuery) return true;
+
+      const searchTarget = [
+        job.serviceName,
+        job.service?.name,
+        job.customer?.name,
+        job.location,
+        job.status,
+      ]
+        .filter(Boolean)
+        .join(" ")
+        .toLowerCase();
+
+      return searchTarget.includes(normalizedQuery);
+    });
+  }, [jobs, activeTab, searchTerm]);
+
+  const totalPages = Math.max(1, Math.ceil(filteredJobs.length / jobsPerPage));
+  const pagedJobs = useMemo(() => {
+    const start = (currentPage - 1) * jobsPerPage;
+    return filteredJobs.slice(start, start + jobsPerPage);
+  }, [filteredJobs, currentPage, jobsPerPage]);
+
+  const statusCounts = useMemo(() => {
+    return jobs.reduce(
+      (acc, job) => {
+        const status = job.status || "unknown";
+        acc[status] = (acc[status] || 0) + 1;
+        acc.all += 1;
+        return acc;
+      },
+      { all: 0 }
+    );
+  }, [jobs]);
+
   /* ================= UI ================= */
   return (
-    <div className="w-full min-h-screen bg-gray-100 p-4 md:p-6">
-      <h1 className="mb-6 text-3xl font-bold text-gray-800">Your Jobs</h1>
+    <div className="w-full min-h-screen bg-gradient-to-br from-slate-50 via-sky-50 to-amber-50 p-4 text-slate-900 md:p-6">
+      <div className="sticky top-0 z-20 -mx-4 mb-6 border-b border-slate-200/60 bg-white/80 px-4 py-4 backdrop-blur md:-mx-6 md:px-6">
+        <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+          <div>
+            <p className="text-xs font-semibold uppercase tracking-[0.3em] text-slate-400">
+              Provider Dashboard
+            </p>
+            <h1 className="mt-2 text-4xl font-bold tracking-tight text-slate-900">
+              My Jobs
+            </h1>
+            <p className="mt-1 text-sm text-slate-500">
+              Track active work, respond quickly, and keep everything on schedule.
+            </p>
+          </div>
+
+          <div className="flex w-full flex-col gap-3 sm:flex-row sm:items-center lg:w-auto">
+            <div className="relative w-full sm:w-72">
+              <FaSearch className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+              <input
+                type="text"
+                placeholder="Search jobs, customers, locations..."
+                value={searchTerm}
+                onChange={(event) => setSearchTerm(event.target.value)}
+                className="w-full rounded-2xl border border-slate-200 bg-white px-10 py-2.5 text-sm text-slate-700 outline-none transition focus:border-sky-400 focus:ring-2 focus:ring-sky-100"
+              />
+            </div>
+
+            <div className="hidden items-center gap-2 rounded-full border border-slate-200 bg-white px-3 py-2 text-xs font-semibold uppercase tracking-wide text-slate-500 lg:flex">
+              <FaFilter className="text-slate-400" />
+              Quick Filters
+            </div>
+          </div>
+        </div>
+
+        <JobFilters
+          tabs={FILTER_TABS}
+          activeTab={activeTab}
+          counts={statusCounts}
+          onTabChange={setActiveTab}
+        />
+      </div>
 
       {error ? (
         <div className="mb-4 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
@@ -387,350 +518,58 @@ Issue: ${disputeData.issue.trim()}`;
       ) : null}
 
       {loading ? (
-        <p className="text-gray-500">Loading jobs...</p>
-      ) : jobs.length === 0 ? (
-        <p className="text-gray-500">No jobs yet.</p>
+        <JobSkeletonGrid />
+      ) : filteredJobs.length === 0 ? (
+        <EmptyState
+          title="No jobs yet"
+          description="New requests will show up here as soon as customers book you."
+        />
       ) : (
-        <div className="overflow-x-auto rounded-lg border bg-white shadow-md">
-          <table className="min-w-full">
-            <thead className="bg-gray-50">
-              <tr>
-                <th className="px-4 py-2 text-left text-sm font-medium text-gray-500">
-                  Service
-                </th>
-                <th className="px-4 py-2 text-left text-sm font-medium text-gray-500">
-                  Customer
-                </th>
-                <th className="px-4 py-2 text-left text-sm font-medium text-gray-500">
-                  Date
-                </th>
-                <th className="px-4 py-2 text-left text-sm font-medium text-gray-500">
-                  Status
-                </th>
-                <th className="px-4 py-2"></th>
-              </tr>
-            </thead>
-
-            <tbody className="divide-y">
-              {jobs.map((job) => {
-                const disputeId = getDisputeIdFromJob(job);
-                const hasDispute = Boolean(disputeId);
-
-                return (
-                  <tr key={job._id} className="hover:bg-gray-50">
-                    <td className="px-4 py-2">
-                      <div className="flex items-center gap-2">
-                        <span>{job.serviceName || job.service?.name || "—"}</span>
-                        {hasDispute && (
-                          <span className="rounded-full bg-red-50 px-2 py-0.5 text-xs font-semibold text-red-700">
-                            Dispute
-                          </span>
-                        )}
-                      </div>
-                    </td>
-
-                    <td className="px-4 py-2">{job.customer?.name || "—"}</td>
-
-                    <td className="px-4 py-2">
-                      {job.scheduledAt
-                        ? new Date(job.scheduledAt).toLocaleDateString()
-                        : "—"}
-                    </td>
-
-                    <td
-                      className={`px-4 py-2 font-semibold ${statusColor(
-                        job.status
-                      )}`}
-                    >
-                      {job.status || "—"}
-                    </td>
-
-                    <td className="px-4 py-2">
-                      <div className="flex flex-wrap gap-2">
-                        <button
-                          onClick={() => {
-                            setModalJob(job);
-                            setShowChat(false);
-                            setShowMap(true);
-                          }}
-                          className="rounded bg-sky-500 px-3 py-1 text-sm text-white hover:bg-sky-600"
-                        >
-                          View
-                        </button>
-
-                        <button
-                          onClick={() => openDisputeFromJob(job)}
-                          disabled={disputeBusyId === job._id}
-                          className={`inline-flex items-center gap-2 rounded px-3 py-1 text-sm text-white disabled:cursor-not-allowed disabled:opacity-60 ${
-                            hasDispute
-                              ? "bg-purple-600 hover:bg-purple-700"
-                              : "bg-amber-500 hover:bg-amber-600"
-                          }`}
-                        >
-                          <FaExclamationTriangle />
-                          {renderDisputeButtonLabel(job)}
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
+        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+          {pagedJobs.map((job) => (
+            <JobCard
+              key={job._id}
+              job={job}
+              onView={() => {
+                setModalJob(job);
+                setShowChat(false);
+              }}
+              onAccept={() => updateStatus(job._id, "accepted")}
+              onReject={() => updateStatus(job._id, "cancelled")}
+              onComplete={() => updateStatus(job._id, "completed")}
+            />
+          ))}
         </div>
+      )}
+
+      {!loading && filteredJobs.length > 0 && (
+        <Pagination
+          currentPage={currentPage}
+          totalPages={totalPages}
+          onPageChange={setCurrentPage}
+        />
       )}
 
       {modalJob && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-          <div className="relative flex h-[85vh] max-h-[85vh] w-full flex-col overflow-hidden rounded-xl bg-white shadow-2xl sm:w-11/12 md:w-3/4 lg:w-2/3 xl:w-1/2">
-            <button
-              className="absolute right-3 top-3 z-10 text-gray-600 hover:text-gray-900"
-              onClick={closeModal}
-            >
-              <FaTimes />
-            </button>
-
-            {showChat ? (
-              <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
-                <div className="shrink-0 border-b border-gray-200 px-5 py-4">
-                  <h2 className="text-lg font-bold text-sky-500">
-                    Chat with {modalJob.customer?.name || "Customer"}
-                  </h2>
-                </div>
-
-                <div className="min-h-0 flex-1 overflow-hidden">
-                  <div className="h-full w-full p-4">
-                    <Chat bookingId={modalJob._id} token={token} />
-                  </div>
-                </div>
-              </div>
-            ) : (
-              <div className="min-h-0 flex-1 overflow-y-auto p-5 md:p-6">
-                <h2 className="mb-4 text-xl font-semibold">
-                  {modalJob.serviceName || modalJob.service?.name || "Job Details"}
-                </h2>
-
-                <div className="space-y-1 text-sm md:text-base">
-                  <p>
-                    <strong>Customer:</strong> {modalJob.customer?.name || "—"}
-                  </p>
-                  <p>
-                    <strong>Date:</strong>{" "}
-                    {modalJob.scheduledAt
-                      ? new Date(modalJob.scheduledAt).toLocaleString()
-                      : "—"}
-                  </p>
-                  <p>
-                    <strong>Location:</strong> {modalJob.location || "—"}
-                  </p>
-
-                  {(getDisputeIdFromJob(modalJob) || modalJob.hasDispute) && (
-                    <div className="mt-2">
-                      <div className="mb-2 inline-flex items-center rounded-full bg-red-50 px-3 py-1 text-sm font-semibold text-red-700">
-                        Dispute raised for this job
-                      </div>
-                    </div>
-                  )}
-
-                  <div className="mt-4 flex flex-wrap items-center gap-3">
-                    <button
-                      type="button"
-                      onClick={() => setShowMap((v) => !v)}
-                      className="inline-flex items-center gap-2 rounded-lg bg-sky-500 px-4 py-2 text-sm font-semibold text-white hover:bg-sky-600"
-                    >
-                      {showMap ? <FaEyeSlash /> : <FaMap />}
-                      {showMap ? "Hide Map" : "Show Map"}
-                    </button>
-
-                    <button
-                      type="button"
-                      onClick={() => openDisputeFromJob(modalJob)}
-                      disabled={disputeBusyId === modalJob._id}
-                      className={`inline-flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-60 ${
-                        getDisputeIdFromJob(modalJob) || modalJob.hasDispute
-                          ? "bg-purple-600 hover:bg-purple-700"
-                          : "bg-amber-500 hover:bg-amber-600"
-                      }`}
-                    >
-                      <FaExclamationTriangle />
-                      {renderDisputeButtonLabel(modalJob)}
-                    </button>
-                  </div>
-
-                  {showMap ? (
-                    modalCoords ? (
-                      providerCoords ? (
-                        <div className="mt-4">
-                          <div className="mb-2 flex items-center gap-2 text-sm font-semibold text-sky-600">
-                            <FaMapMarkerAlt />
-                            Provider and customer route
-                          </div>
-                          <div className="h-80 overflow-hidden rounded-xl border">
-                            <MapContainer
-                              center={[
-                                (providerCoords.lat + modalCoords.lat) / 2,
-                                (providerCoords.lng + modalCoords.lng) / 2,
-                              ]}
-                              zoom={14}
-                              scrollWheelZoom={true}
-                              className="h-full w-full"
-                            >
-                              <TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
-                              <RecenterMap bounds={routeBounds} />
-                              <Marker
-                                position={[
-                                  providerCoords.lat,
-                                  providerCoords.lng,
-                                ]}
-                              />
-                              <Marker position={[modalCoords.lat, modalCoords.lng]} />
-                              <Polyline
-                                positions={[
-                                  [providerCoords.lat, providerCoords.lng],
-                                  [modalCoords.lat, modalCoords.lng],
-                                ]}
-                                pathOptions={{
-                                  color: "blue",
-                                  weight: 4,
-                                  opacity: 0.85,
-                                }}
-                              />
-                            </MapContainer>
-                          </div>
-                        </div>
-                      ) : (
-                        <div className="mt-4">
-                          <div className="mb-2 flex items-center gap-2 text-sm font-semibold text-sky-600">
-                            <FaMapMarkerAlt />
-                            Customer location on map
-                          </div>
-                          <div className="h-72 overflow-hidden rounded-xl border">
-                            <MapContainer
-                              center={[modalCoords.lat, modalCoords.lng]}
-                              zoom={14}
-                              scrollWheelZoom={true}
-                              className="h-full w-full"
-                            >
-                              <TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
-                              <RecenterMap
-                                bounds={[
-                                  [modalCoords.lat, modalCoords.lng],
-                                  [modalCoords.lat, modalCoords.lng],
-                                ]}
-                              />
-                              <Marker position={[modalCoords.lat, modalCoords.lng]} />
-                            </MapContainer>
-                          </div>
-                          {!providerCoords && (
-                            <p className="mt-2 text-sm text-gray-500">
-                              Provider coordinates are not available yet.
-                            </p>
-                          )}
-                        </div>
-                      )
-                    ) : (
-                      <p className="mt-2 text-sm text-gray-500">
-                        No saved map coordinates are available for this booking.
-                      </p>
-                    )
-                  ) : (
-                    <p className="mt-3 text-sm text-gray-500">
-                      Map hidden. Use the toggle above to show or hide the route.
-                    </p>
-                  )}
-
-                  <p className="mt-2">
-                    <strong>Price:</strong> {formatKES(modalJob.price)}
-                  </p>
-                  <p>
-                    <strong>Status:</strong>{" "}
-                    <span className={`font-semibold ${statusColor(modalJob.status)}`}>
-                      {modalJob.status || "—"}
-                    </span>
-                  </p>
-                  <p>
-                    <strong>Payment:</strong>{" "}
-                    <span
-                      className={`font-semibold ${paymentColor(
-                        modalJob.paymentStatus
-                      )}`}
-                    >
-                      {modalJob.paymentStatus || "unpaid"}
-                    </span>
-                  </p>
-                  {modalJob.notes && (
-                    <p className="mt-2 text-gray-600">
-                      <strong>Notes:</strong> {modalJob.notes}
-                    </p>
-                  )}
-                </div>
-
-                <div className="mt-6 flex flex-wrap gap-3">
-                  {modalJob.status === "pending" && (
-                    <button
-                      onClick={() => updateStatus(modalJob._id, "accepted")}
-                      className="rounded bg-blue-500 px-4 py-2 text-white"
-                    >
-                      Accept Job
-                    </button>
-                  )}
-
-                  {modalJob.status === "accepted" && (
-                    <button
-                      onClick={() => updateStatus(modalJob._id, "in_progress")}
-                      className="rounded bg-purple-500 px-4 py-2 text-white"
-                    >
-                      Start Job
-                    </button>
-                  )}
-
-                  {modalJob.status === "in_progress" && (
-                    <button
-                      onClick={() => updateStatus(modalJob._id, "completed")}
-                      className="rounded bg-green-500 px-4 py-2 text-white"
-                    >
-                      Mark Completed
-                    </button>
-                  )}
-
-                  {modalJob.status !== "completed" &&
-                    modalJob.status !== "cancelled" && (
-                      <button
-                        onClick={() => updateStatus(modalJob._id, "cancelled")}
-                        className="rounded bg-red-500 px-4 py-2 text-white"
-                      >
-                        Cancel
-                      </button>
-                    )}
-
-                  <button
-                    onClick={() => setShowChat(true)}
-                    className="rounded bg-sky-500 px-4 py-2 text-white"
-                  >
-                    Open Chat
-                  </button>
-
-                  <button
-                    onClick={() => openDisputeFromJob(modalJob)}
-                    disabled={disputeBusyId === modalJob._id}
-                    className={`inline-flex items-center gap-2 rounded px-4 py-2 text-white hover:opacity-95 disabled:cursor-not-allowed disabled:opacity-60 ${
-                      getDisputeIdFromJob(modalJob) || modalJob.hasDispute
-                        ? "bg-purple-600"
-                        : "bg-amber-500"
-                    }`}
-                  >
-                    <FaExclamationTriangle />
-                    {renderDisputeButtonLabel(modalJob)}
-                  </button>
-                </div>
-              </div>
-            )}
-          </div>
-        </div>
+        <JobDetailsModal
+          job={modalJob}
+          isLoading={detailsLoading}
+          providerLocation={providerCoords}
+          customerLocation={modalCoords}
+          onClose={closeModal}
+          onAccept={() => updateStatus(modalJob._id, "accepted")}
+          onReject={() => updateStatus(modalJob._id, "cancelled")}
+          onComplete={() => updateStatus(modalJob._id, "completed")}
+          onChat={() => setShowChat(true)}
+          onDispute={() => openDisputeFromJob(modalJob)}
+          disputeBusy={disputeBusyId === modalJob._id}
+          showChat={showChat}
+          token={token}
+        />
       )}
 
       {disputeJob && (
-        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50 p-4 backdrop-blur-sm">
+        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-slate-900/50 p-4 backdrop-blur-sm">
           <div className="relative w-full max-w-lg rounded-2xl bg-white p-6 shadow-2xl">
             <button
               className="absolute right-4 top-4 text-gray-400 transition hover:text-gray-700 disabled:cursor-not-allowed disabled:opacity-60"
@@ -834,4 +673,707 @@ Issue: ${disputeData.issue.trim()}`;
 
 const FieldLabel = ({ label }) => (
   <label className="mb-1 block text-sm font-medium text-gray-700">{label}</label>
+);
+
+const InfoRow = ({ icon: Icon, label, value }) => (
+  <div className="flex items-start gap-3">
+    <div className="mt-0.5 text-slate-400">
+      <Icon />
+    </div>
+    <div>
+      <p className="text-xs font-semibold uppercase tracking-wide text-slate-400">
+        {label}
+      </p>
+      <p className="text-sm font-semibold text-slate-800">{value}</p>
+    </div>
+  </div>
+);
+
+const RouteLayer = ({ providerLocation, customerLocation, onStateChange }) => {
+  const map = useMap();
+
+  useEffect(() => {
+    if (!providerLocation || !customerLocation) return undefined;
+
+    const providerIcon = L.icon({
+      iconUrl: "https://maps.google.com/mapfiles/ms/icons/blue-dot.png",
+      iconSize: [32, 32],
+      iconAnchor: [16, 32],
+    });
+    const customerIcon = L.icon({
+      iconUrl: "https://maps.google.com/mapfiles/ms/icons/red-dot.png",
+      iconSize: [32, 32],
+      iconAnchor: [16, 32],
+    });
+
+    const control = L.Routing.control({
+      waypoints: [
+        L.latLng(providerLocation.lat, providerLocation.lng),
+        L.latLng(customerLocation.lat, customerLocation.lng),
+      ],
+      router: L.Routing.osrmv1({ serviceUrl: "https://router.project-osrm.org/route/v1" }),
+      addWaypoints: false,
+      draggableWaypoints: false,
+      fitSelectedRoutes: true,
+      show: false,
+      lineOptions: {
+        styles: [{ color: "#2563eb", weight: 6, opacity: 0.9 }],
+      },
+      createMarker: (index, waypoint) =>
+        L.marker(waypoint.latLng, {
+          icon: index === 0 ? providerIcon : customerIcon,
+        }),
+    });
+
+    control.on("routingstart", () => onStateChange?.({ loading: true, error: "" }));
+    control.on("routesfound", (event) => {
+      const summary = event?.routes?.[0]?.summary;
+      const distanceKm = summary?.totalDistance
+        ? summary.totalDistance / 1000
+        : null;
+      const durationMin = summary?.totalTime
+        ? Math.round(summary.totalTime / 60)
+        : null;
+      onStateChange?.({
+        loading: false,
+        error: "",
+        distanceKm,
+        durationMin,
+      });
+    });
+    control.on("routingerror", () =>
+      onStateChange?.({ loading: false, error: "No route found for this job." })
+    );
+
+    control.addTo(map);
+
+    const bounds = L.latLngBounds([
+      [providerLocation.lat, providerLocation.lng],
+      [customerLocation.lat, customerLocation.lng],
+    ]);
+    map.fitBounds(bounds, { padding: [30, 30] });
+
+    return () => {
+      map.removeControl(control);
+    };
+  }, [map, providerLocation, customerLocation, onStateChange]);
+
+  return null;
+};
+
+const JobRouteMap = ({ providerLocation, customerLocation }) => {
+  const [routeState, setRouteState] = useState({
+    loading: false,
+    error: "",
+    distanceKm: null,
+    durationMin: null,
+  });
+  const [isMapExpanded, setIsMapExpanded] = useState(false);
+  const [isMapReady, setIsMapReady] = useState(false);
+  const [mapRef, setMapRef] = useState(null);
+
+  useEffect(() => {
+    const timer = setTimeout(() => setIsMapReady(true), 100);
+    return () => clearTimeout(timer);
+  }, []);
+
+  // Resize map when expanded
+  useEffect(() => {
+    if (!mapRef || !isMapExpanded) return;
+    const timer = setTimeout(() => {
+      mapRef.invalidateSize();
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [isMapExpanded, mapRef]);
+
+
+  // Prevent background scroll when expanded
+  useEffect(() => {
+    if (isMapExpanded) {
+      document.body.style.overflow = "hidden";
+    } else {
+      document.body.style.overflow = "auto";
+    }
+    return () => {
+      document.body.style.overflow = "auto";
+    };
+  }, [isMapExpanded]);
+
+  // Handle ESC key to close expanded map
+  useEffect(() => {
+    const handleEsc = (e) => {
+      if (e.key === "Escape" && isMapExpanded) {
+        if (document.fullscreenElement) {
+          document.exitFullscreen().catch(() => undefined);
+        }
+        setIsMapExpanded(false);
+      }
+    };
+    window.addEventListener("keydown", handleEsc);
+    return () => window.removeEventListener("keydown", handleEsc);
+  }, [isMapExpanded]);
+
+  const handleMapToggle = async () => {
+    try {
+      const mapElement = document.querySelector("[data-map-element]");
+      if (!isMapExpanded && mapElement?.requestFullscreen) {
+        await mapElement.requestFullscreen();
+        setIsMapExpanded(true);
+        return;
+      }
+
+      if (document.fullscreenElement) {
+        await document.exitFullscreen();
+      }
+      setIsMapExpanded(false);
+    } catch (err) {
+      console.error("Map fullscreen toggle error:", err);
+      setIsMapExpanded((prev) => !prev);
+    }
+  };
+
+  if (!providerLocation || !customerLocation) {
+    return (
+      <div className="flex h-64 items-center justify-center rounded-2xl border border-slate-200 bg-white text-sm text-slate-500 shadow-sm">
+        Provider or customer coordinates are missing.
+      </div>
+    );
+  }
+
+  const mapContainer = (
+    <div
+      data-map-element
+      className={`relative overflow-hidden bg-white transition-all duration-300 ease-in-out ${
+        isMapExpanded
+          ? "fixed inset-0 z-[100] w-screen h-screen rounded-none"
+          : "relative w-full h-[300px] rounded-2xl"
+      }`}
+    >
+      {/* Control Buttons */}
+      <div className="absolute top-4 right-4 z-[1100] flex flex-col items-end gap-2 pointer-events-auto">
+        <button
+          type="button"
+          onClick={handleMapToggle}
+          className="flex items-center gap-2 rounded-xl bg-white/95 px-4 py-2.5 text-xs font-bold uppercase tracking-wide text-slate-800 border border-slate-200 shadow-xl transition-all duration-200 hover:bg-white hover:shadow-2xl"
+          title={isMapExpanded ? "Exit full screen" : "Full screen"}
+        >
+          <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24">
+            {isMapExpanded ? (
+              <path d="M5 3h6v2H5v6H3V3h2zm8 0h6v8h-2V5h-4V3zm-8 8h2v6H3v-6zm16 0h2v6h-6v-2h4v-4z" />
+            ) : (
+              <path d="M7 14H5v5h5v-2H7v-3zm-2-4h2V7h3V5H5v5zm12 7h-3v2h5v-5h-2v3zM14 5v2h3v3h2V5h-5z" />
+            )}
+          </svg>
+          <span>{isMapExpanded ? "Minimize" : "Full screen"}</span>
+        </button>
+      </div>
+
+      {/* Loading State */}
+      {!isMapReady && (
+        <div className="absolute inset-0 z-10 flex items-center justify-center bg-slate-100 text-sm text-slate-500">
+          Loading map...
+        </div>
+      )}
+
+      {/* Route Calculating State */}
+      {routeState.loading && (
+        <div className="absolute inset-0 z-10 flex items-center justify-center bg-white/80 text-sm text-slate-500">
+          Calculating route...
+        </div>
+      )}
+
+      {/* Route Error State */}
+      {routeState.error && !routeState.loading && (
+        <div className="absolute inset-0 z-10 flex items-center justify-center bg-white/80 text-sm text-slate-500">
+          {routeState.error}
+        </div>
+      )}
+
+      {/* Map Container */}
+      {isMapReady && (
+        <MapContainer
+          center={[providerLocation.lat, providerLocation.lng]}
+          zoom={13}
+          scrollWheelZoom={false}
+          className="h-full w-full"
+          whenCreated={setMapRef}
+        >
+          <TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
+          <RouteLayer
+            providerLocation={providerLocation}
+            customerLocation={customerLocation}
+            onStateChange={setRouteState}
+          />
+        </MapContainer>
+      )}
+    </div>
+  );
+
+  return (
+    <div className="space-y-3">
+      {mapContainer}
+
+      {/* Route Information Display */}
+      {(routeState.distanceKm || routeState.durationMin) && !isMapExpanded && (
+        <div className="flex flex-wrap items-center gap-2 text-sm text-slate-600">
+          {routeState.distanceKm != null && (
+            <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-700">
+              {routeState.distanceKm.toFixed(1)} km
+            </span>
+          )}
+          {routeState.durationMin != null && (
+            <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-700">
+              {routeState.durationMin} min ETA
+            </span>
+          )}
+        </div>
+      )}
+    </div>
+  );
+};
+
+const JobDetailsSkeleton = () => (
+  <div className="space-y-6">
+    <div className="h-6 w-2/3 rounded-full bg-slate-200" />
+    <div className="grid gap-4 md:grid-cols-2">
+      <div className="h-20 rounded-2xl bg-slate-200" />
+      <div className="h-20 rounded-2xl bg-slate-200" />
+      <div className="h-20 rounded-2xl bg-slate-200" />
+      <div className="h-20 rounded-2xl bg-slate-200" />
+    </div>
+    <div className="h-64 rounded-2xl bg-slate-200" />
+  </div>
+);
+
+const JobDetailsModal = memo(
+  ({
+    job,
+    isLoading,
+    providerLocation,
+    customerLocation,
+    onClose,
+    onAccept,
+    onReject,
+    onComplete,
+    onChat,
+    onDispute,
+    disputeBusy,
+    showChat,
+    token,
+  }) => (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
+      onClick={onClose}
+    >
+      <div
+        className="w-full max-w-5xl max-h-[90vh] overflow-hidden rounded-3xl bg-white shadow-2xl transition-all duration-300"
+        onClick={(event) => event.stopPropagation()}
+      >
+        <div className="flex h-full flex-col">
+          <div className="sticky top-0 z-10 flex items-center justify-between border-b px-6 py-4">
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-[0.3em] text-slate-400">
+                Job Details
+              </p>
+              <h2 className="mt-1 text-2xl font-semibold text-slate-900">
+                {job.serviceName || job.service?.name || "Job Details"}
+              </h2>
+            </div>
+            <button
+              onClick={onClose}
+              className="text-2xl text-gray-500 hover:bg-gray-100 rounded-full px-3 py-1"
+              aria-label="Close job details"
+            >
+              ×
+            </button>
+          </div>
+
+          <div className="flex-1 overflow-y-auto p-6">
+            {showChat ? (
+              <div className="flex flex-col gap-4">
+                <div className="flex items-center gap-2 text-sm text-slate-500">
+                  <FaClock />
+                  <span>
+                    {job.scheduledAt
+                      ? new Date(job.scheduledAt).toLocaleString()
+                      : "Schedule pending"}
+                  </span>
+                </div>
+                <div className="flex flex-col min-h-[420px] md:min-h-[500px] lg:min-h-[560px] border rounded-2xl bg-white">
+                  <div className="flex-1 min-h-0 overflow-y-auto p-3">
+                    <Chat bookingId={job._id} token={token} />
+                  </div>
+                </div>
+              </div>
+            ) : (
+              <div className="flex flex-col lg:flex-row gap-4 h-full">
+                <div className="lg:w-1/2 min-w-0 flex flex-col gap-4 overflow-y-auto">
+                  <div className="flex items-center gap-2 text-sm text-slate-500">
+                    <FaClock />
+                    <span>
+                      {job.scheduledAt
+                        ? new Date(job.scheduledAt).toLocaleString()
+                        : "Schedule pending"}
+                    </span>
+                  </div>
+                  <StatusBadge status={job.status} />
+
+                  {isLoading ? (
+                    <JobDetailsSkeleton />
+                  ) : (
+                    <>
+                      <div className="grid gap-4 md:grid-cols-2">
+                        <div className="rounded-2xl bg-slate-50 p-4 shadow-sm">
+                          <InfoRow
+                            icon={FaUser}
+                            label="Customer"
+                            value={job.customer?.name || "Customer"}
+                          />
+                          {job.customer?.phone && (
+                            <div className="mt-4">
+                              <InfoRow
+                                icon={FaPhone}
+                                label="Phone"
+                                value={job.customer?.phone}
+                              />
+                            </div>
+                          )}
+                        </div>
+                        <div className="rounded-2xl bg-slate-50 p-4 shadow-sm">
+                          <InfoRow
+                            icon={FaMapMarkerAlt}
+                            label="Location"
+                            value={job.location || "Location not provided"}
+                          />
+                          <div className="mt-4">
+                            <InfoRow
+                              icon={FaTag}
+                              label="Category"
+                              value={job.service?.category || job.category || "General"}
+                            />
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="rounded-2xl bg-slate-50 p-4 shadow-sm">
+                        <p className="text-xs font-semibold uppercase tracking-wide text-slate-400">
+                          Description
+                        </p>
+                        <p className="mt-2 text-sm leading-relaxed text-slate-700">
+                          {job.notes || job.description || "No additional details provided."}
+                        </p>
+                      </div>
+
+                      <div className="rounded-2xl bg-slate-50 p-4 shadow-sm">
+                        <InfoRow
+                          icon={FaMoneyBillWave}
+                          label="Price"
+                          value={formatKES(job.price)}
+                        />
+                      </div>
+                    </>
+                  )}
+                </div>
+
+                <div className="lg:w-1/2 min-w-0 flex flex-col gap-4">
+                  <div className="rounded-2xl bg-white p-4 shadow-md">
+                    <p className="text-xs font-semibold uppercase tracking-wide text-slate-400">
+                      Map Overview
+                    </p>
+                    <div className="mt-3 w-full">
+                      <JobRouteMap
+                        providerLocation={providerLocation}
+                        customerLocation={customerLocation}
+                      />
+                    </div>
+                  </div>
+
+                  <div className="rounded-2xl bg-white p-4 shadow-md">
+                    <p className="text-xs font-semibold uppercase tracking-wide text-slate-400">
+                      Quick Summary
+                    </p>
+                    <div className="mt-4 space-y-3 text-sm text-slate-700">
+                      <InfoRow
+                        icon={FaMoneyBillWave}
+                        label="Price"
+                        value={formatKES(job.price)}
+                      />
+                      <InfoRow
+                        icon={FaBriefcase}
+                        label="Status"
+                        value={STATUS_META[job.status]?.label || "Unknown"}
+                      />
+                      {job.distance && (
+                        <InfoRow
+                          icon={FaMapMarkerAlt}
+                          label="Distance"
+                          value={`${job.distance} km`}
+                        />
+                      )}
+                    </div>
+                  </div>
+
+                  <div className="rounded-2xl bg-white p-4 shadow-md">
+                    {job.status !== "rejected" && (
+                      <div className="flex flex-wrap gap-3 mt-4">
+                        {job.status === "pending" && (
+                          <>
+                            <button
+                              onClick={onAccept}
+                              className="rounded-xl bg-blue-600 px-4 py-2 text-sm font-semibold text-white transition-all duration-300 hover:bg-blue-700"
+                            >
+                              Accept Job
+                            </button>
+                            <button
+                              onClick={onReject}
+                              className="rounded-xl border border-rose-200 bg-rose-50 px-4 py-2 text-sm font-semibold text-rose-700 transition-all duration-300 hover:border-rose-300"
+                            >
+                              Reject Job
+                            </button>
+                            <button
+                              onClick={onChat}
+                              className="rounded-xl bg-slate-900 px-4 py-2 text-sm font-semibold text-white transition-all duration-300 hover:bg-slate-800"
+                            >
+                              Open Chat
+                            </button>
+                          </>
+                        )}
+
+                        {job.status === "accepted" && (
+                          <>
+                            <button
+                              onClick={onComplete}
+                              className="rounded-xl bg-emerald-600 px-4 py-2 text-sm font-semibold text-white transition-all duration-300 hover:bg-emerald-700"
+                            >
+                              Mark as Completed
+                            </button>
+                            <button
+                              onClick={onChat}
+                              className="rounded-xl bg-slate-900 px-4 py-2 text-sm font-semibold text-white transition-all duration-300 hover:bg-slate-800"
+                            >
+                              Open Chat
+                            </button>
+                            <button
+                              onClick={onReject}
+                              className="rounded-xl border border-rose-200 bg-rose-50 px-4 py-2 text-sm font-semibold text-rose-700 transition-all duration-300 hover:border-rose-300"
+                            >
+                              Reject Job
+                            </button>
+                          </>
+                        )}
+
+                        {job.status === "completed" && (
+                          <>
+                            <button
+                              onClick={onChat}
+                              className="rounded-xl bg-blue-600 px-4 py-2 text-sm font-semibold text-white transition-all duration-300 hover:bg-blue-700"
+                            >
+                              Open Chat
+                            </button>
+                            <button
+                              onClick={onDispute}
+                              disabled={disputeBusy}
+                              className="rounded-xl bg-rose-600 px-4 py-2 text-sm font-semibold text-white transition-all duration-300 hover:bg-rose-700 disabled:cursor-not-allowed disabled:opacity-60"
+                            >
+                              {disputeBusy ? "Opening..." : "Raise Dispute"}
+                            </button>
+                          </>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+);
+
+const JobFilters = memo(({ tabs, activeTab, counts, onTabChange }) => (
+  <div className="mt-4 flex flex-wrap gap-2">
+    {tabs.map((tab) => {
+      const isActive = activeTab === tab.value;
+      const count = counts?.[tab.value] ?? 0;
+
+      return (
+        <button
+          key={tab.value}
+          onClick={() => onTabChange(tab.value)}
+          className={`inline-flex items-center gap-2 rounded-full border px-4 py-1.5 text-xs font-semibold uppercase tracking-wide transition ${
+            isActive
+              ? "border-sky-200 bg-sky-50 text-sky-700"
+              : "border-slate-200 bg-white text-slate-500 hover:border-slate-300"
+          }`}
+        >
+          <span>{tab.label}</span>
+          <span
+            className={`rounded-full px-2 py-0.5 text-[10px] font-bold ${
+              isActive
+                ? "bg-sky-100 text-sky-700"
+                : "bg-slate-100 text-slate-500"
+            }`}
+          >
+            {count}
+          </span>
+        </button>
+      );
+    })}
+  </div>
+));
+
+const StatusBadge = memo(({ status }) => {
+  const meta = STATUS_META[status] || {
+    label: status || "Unknown",
+    className: "bg-slate-100 text-slate-600 ring-slate-200",
+    icon: FaBriefcase,
+  };
+
+  const Icon = meta.icon;
+
+  return (
+    <span
+      className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-semibold ring-1 ${
+        meta.className
+      }`}
+    >
+      <Icon className="text-[11px]" />
+      {meta.label}
+    </span>
+  );
+});
+
+const JobCard = memo(({ job, onView, onAccept, onReject, onComplete }) => {
+  return (
+    <div className="group flex h-full flex-col rounded-2xl bg-white p-4 shadow-sm ring-1 ring-slate-200 transition duration-200 hover:-translate-y-1 hover:shadow-xl">
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <h3 className="text-lg font-semibold text-slate-900">
+            {job.serviceName || job.service?.name || "Job"}
+          </h3>
+          <p className="text-sm text-slate-500">
+            {job.customer?.name || "Customer"}
+          </p>
+        </div>
+        <StatusBadge status={job.status} />
+      </div>
+
+      <div className="mt-3 space-y-2 text-sm text-slate-600">
+        <div className="flex items-center gap-2">
+          <FaMapMarkerAlt className="text-slate-400" />
+          <span>{job.location || "Location unavailable"}</span>
+        </div>
+        <div className="flex items-center gap-2">
+          <FaClock className="text-slate-400" />
+          <span>
+            {job.scheduledAt
+              ? new Date(job.scheduledAt).toLocaleString()
+              : "Date pending"}
+          </span>
+        </div>
+      </div>
+
+      <div className="mt-4 flex items-center justify-between">
+        <span className="text-lg font-bold text-emerald-700">
+          {formatKES(job.price)}
+        </span>
+        {job.disputeId || job.hasDispute ? (
+          <span className="rounded-full bg-red-50 px-2 py-0.5 text-[11px] font-semibold text-red-700">
+            Dispute
+          </span>
+        ) : null}
+      </div>
+
+      <div className="mt-4 flex flex-wrap gap-2">
+        <button
+          onClick={onView}
+          className="rounded-full bg-slate-900 px-4 py-2 text-xs font-semibold uppercase tracking-wide text-white transition hover:bg-slate-800"
+        >
+          View Details
+        </button>
+
+        {job.status === "pending" && (
+          <>
+            <button
+              onClick={onAccept}
+              className="rounded-full bg-blue-600 px-4 py-2 text-xs font-semibold uppercase tracking-wide text-white transition hover:bg-blue-700"
+            >
+              Accept
+            </button>
+            <button
+              onClick={onReject}
+              className="rounded-full border border-rose-200 bg-rose-50 px-4 py-2 text-xs font-semibold uppercase tracking-wide text-rose-700 transition hover:border-rose-300"
+            >
+              Reject
+            </button>
+          </>
+        )}
+
+        {job.status === "accepted" && (
+          <button
+            onClick={onView}
+            className="rounded-full bg-emerald-600 px-4 py-2 text-xs font-semibold uppercase tracking-wide text-white transition hover:bg-emerald-700"
+          >
+            Mark Complete
+          </button>
+        )}
+      </div>
+    </div>
+  );
+});
+
+const JobSkeletonGrid = () => (
+  <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+    {Array.from({ length: 8 }).map((_, index) => (
+      <div
+        key={`job-skeleton-${index}`}
+        className="flex h-full flex-col gap-3 rounded-2xl bg-white p-4 shadow-sm ring-1 ring-slate-200"
+      >
+        <div className="h-4 w-2/3 rounded-full bg-slate-200" />
+        <div className="h-3 w-1/3 rounded-full bg-slate-200" />
+        <div className="mt-2 h-3 w-full rounded-full bg-slate-200" />
+        <div className="h-3 w-5/6 rounded-full bg-slate-200" />
+        <div className="mt-3 h-4 w-1/2 rounded-full bg-slate-200" />
+        <div className="mt-4 h-9 w-full rounded-full bg-slate-200" />
+      </div>
+    ))}
+  </div>
+);
+
+const EmptyState = ({ title, description }) => (
+  <div className="flex flex-col items-center justify-center gap-3 rounded-3xl border border-dashed border-slate-200 bg-white/70 px-6 py-12 text-center shadow-sm">
+    <div className="rounded-full bg-slate-100 p-4 text-slate-500">
+      <FaBoxOpen className="text-2xl" />
+    </div>
+    <h3 className="text-lg font-semibold text-slate-900">{title}</h3>
+    <p className="max-w-sm text-sm text-slate-500">{description}</p>
+  </div>
+);
+
+const Pagination = ({ currentPage, totalPages, onPageChange }) => (
+  <div className="mt-8 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-slate-200 bg-white/80 px-4 py-3 text-sm text-slate-600 shadow-sm">
+    <span>
+      Page <span className="font-semibold text-slate-900">{currentPage}</span> of{" "}
+      <span className="font-semibold text-slate-900">{totalPages}</span>
+    </span>
+
+    <div className="flex items-center gap-2">
+      <button
+        onClick={() => onPageChange(Math.max(1, currentPage - 1))}
+        disabled={currentPage === 1}
+        className="rounded-full border border-slate-200 px-4 py-1.5 text-xs font-semibold uppercase tracking-wide text-slate-600 transition hover:border-slate-300 disabled:cursor-not-allowed disabled:opacity-50"
+      >
+        Previous
+      </button>
+      <button
+        onClick={() => onPageChange(Math.min(totalPages, currentPage + 1))}
+        disabled={currentPage === totalPages}
+        className="rounded-full bg-slate-900 px-4 py-1.5 text-xs font-semibold uppercase tracking-wide text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-50"
+      >
+        Next
+      </button>
+    </div>
+  </div>
 );

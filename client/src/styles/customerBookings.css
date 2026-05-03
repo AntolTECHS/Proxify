@@ -1,0 +1,82 @@
+.customer-bookings-page {
+  isolation: isolate;
+}
+
+.customer-bookings-page::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background:
+    radial-gradient(circle at top left, rgba(15, 118, 110, 0.08), transparent 45%),
+    radial-gradient(circle at 20% 30%, rgba(202, 138, 4, 0.06), transparent 35%),
+    linear-gradient(120deg, rgba(15, 118, 110, 0.04), transparent 40%),
+    repeating-linear-gradient(
+      90deg,
+      rgba(15, 118, 110, 0.06),
+      rgba(15, 118, 110, 0.06) 1px,
+      transparent 1px,
+      transparent 40px
+    );
+  opacity: 0.7;
+  z-index: 0;
+}
+
+.bookings-hero-title {
+  font-family: "Playfair Display", "Georgia", "Times New Roman", serif;
+  letter-spacing: -0.02em;
+}
+
+.bookings-panel {
+  backdrop-filter: blur(8px);
+}
+
+.bookings-reveal {
+  animation: bookings-rise 0.6s ease both;
+}
+
+.bookings-card {
+  position: relative;
+  overflow: hidden;
+}
+
+.bookings-card::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(120deg, rgba(15, 118, 110, 0.05), transparent 60%);
+  opacity: 0;
+  transition: opacity 0.3s ease;
+}
+
+.bookings-card:hover::after {
+  opacity: 1;
+}
+
+.bookings-stat-card {
+  transition: transform 0.3s ease, box-shadow 0.3s ease;
+}
+
+.bookings-stat-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 18px 38px rgba(8, 47, 43, 0.18);
+}
+
+@keyframes bookings-rise {
+  from {
+    opacity: 0;
+    transform: translateY(16px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .bookings-reveal,
+  .bookings-stat-card {
+    animation: none;
+    transition: none;
+  }
+}

@@ -2,9 +2,11 @@
 import { useState, useEffect, useMemo } from "react";
 import {
   FaClipboardList,
+  FaCompress,
   FaUsers,
   FaStar,
   FaClock,
+  FaExpand,
   FaTimes,
   FaRegStar,
   FaStarHalfAlt,
@@ -13,8 +15,16 @@ import {
 } from "react-icons/fa";
 import { useAuth } from "../../context/AuthContext.jsx";
 import Chat from "../../components/Chat/Chat.jsx";
+import "../../styles/customerDashboard.css";
 
-import { MapContainer, TileLayer, Marker, useMap } from "react-leaflet";
+import {
+  Circle,
+  MapContainer,
+  Marker,
+  ScaleControl,
+  TileLayer,
+  useMap,
+} from "react-leaflet";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
 
@@ -25,9 +35,10 @@ import markerShadow from "leaflet/dist/images/marker-shadow.png";
 const API_URL = import.meta.env.VITE_API_URL || "http://localhost:5000/api";
 
 const MAP_TILE_URL =
-  "https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png";
+  "https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png";
 const MAP_ATTRIBUTION =
-  '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>';
+  '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors';
+const SURROUNDING_RADIUS_METERS = 2200;
 
 // Fix Leaflet default marker icons
 delete L.Icon.Default.prototype._getIconUrl;
@@ -55,14 +66,92 @@ const toFiniteNumber = (value) => {
   return Number.isFinite(num) ? num : null;
 };
 
+const getSurroundingBounds = (lat, lng, radiusMeters = SURROUNDING_RADIUS_METERS) => {
+  const safeLat = Number(lat);
+  const safeLng = Number(lng);
+  const latDelta = radiusMeters / 111320;
+  const lngDelta =
+    radiusMeters /
+    (111320 * Math.max(Math.cos((safeLat * Math.PI) / 180), 0.2));
+
+  return [
+    [safeLat - latDelta, safeLng - lngDelta],
+    [safeLat + latDelta, safeLng + lngDelta],
+  ];
+};
+
+const BOOKING_CARD_STYLES = [
+  {
+    shell:
+      "border-[#d9e7e2] bg-white shadow-[0_12px_30px_rgba(8,47,43,0.08)] hover:shadow-[0_18px_42px_rgba(8,47,43,0.14)]",
+    accent: "from-[#0f766e] to-[#14b8a6]",
+    badge: "bg-[#e8f6f2] text-[#0f766e]",
+  },
+  {
+    shell:
+      "border-[#dee2f8] bg-white shadow-[0_12px_30px_rgba(49,46,129,0.08)] hover:shadow-[0_18px_42px_rgba(49,46,129,0.14)]",
+    accent: "from-[#4f46e5] to-[#0ea5e9]",
+    badge: "bg-[#eef2ff] text-[#4338ca]",
+  },
+  {
+    shell:
+      "border-[#f0e1cb] bg-white shadow-[0_12px_30px_rgba(120,53,15,0.08)] hover:shadow-[0_18px_42px_rgba(120,53,15,0.14)]",
+    accent: "from-[#b45309] to-[#f59e0b]",
+    badge: "bg-[#fff4df] text-[#b45309]",
+  },
+];
+
+const PROVIDER_CARD_STYLES = [
+  {
+    shell:
+      "border-[#d8e6e1] bg-white shadow-[0_12px_30px_rgba(8,47,43,0.08)] hover:shadow-[0_18px_42px_rgba(8,47,43,0.14)]",
+    accent: "from-[#0f766e] to-[#14b8a6]",
+    avatarRing: "border-[#c9e3da]",
+    price: "text-[#0f766e]",
+  },
+  {
+    shell:
+      "border-[#dbe3ff] bg-white shadow-[0_12px_30px_rgba(37,99,235,0.08)] hover:shadow-[0_18px_42px_rgba(37,99,235,0.14)]",
+    accent: "from-[#2563eb] to-[#7c3aed]",
+    avatarRing: "border-[#cbd7ff]",
+    price: "text-[#1d4ed8]",
+  },
+  {
+    shell:
+      "border-[#f2dfcd] bg-white shadow-[0_12px_30px_rgba(194,65,12,0.08)] hover:shadow-[0_18px_42px_rgba(194,65,12,0.14)]",
+    accent: "from-[#c2410c] to-[#f97316]",
+    avatarRing: "border-[#f8d6b0]",
+    price: "text-[#c2410c]",
+  },
+];
+
+const pickCardStyle = (styles, index) => styles[index % styles.length];
+
 function RecenterMap({ bounds }) {
   const map = useMap();
 
   useEffect(() => {
     if (bounds?.length === 2) {
-      map.fitBounds(bounds, { padding: [50, 50] });
+      map.fitBounds(bounds, { padding: [60, 60], maxZoom: 14 });
     }
   }, [bounds, map]);
+
+  return null;
+}
+
+function ResizeMapOnExpand({ trigger, bounds }) {
+  const map = useMap();
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      map.invalidateSize();
+      if (bounds?.length === 2) {
+        map.fitBounds(bounds, { padding: [60, 60], maxZoom: 14 });
+      }
+    }, 180);
+
+    return () => window.clearTimeout(timer);
+  }, [trigger, bounds, map]);
 
   return null;
 }
@@ -117,6 +206,8 @@ export default function CustomerDashboard() {
   const [reviewData, setReviewData] = useState({ rating: 0, comment: "" });
 
   const [chatBookingId, setChatBookingId] = useState(null);
+  const [expandedBooking, setExpandedBooking] = useState(null);
+  const [showAllBookings, setShowAllBookings] = useState(false);
 
   const handleUnauthorized = () => {
     alert("Session expired. Please log in again.");
@@ -331,25 +422,53 @@ export default function CustomerDashboard() {
   };
 
   return (
-    <div className="min-h-screen bg-gray-100 p-4 sm:p-6">
-      <div className="mb-8 flex items-center justify-between">
-        <h1 className="text-2xl font-bold text-teal-600 sm:text-3xl">
-          Welcome {user?.name}
-        </h1>
-        <FaBell className="text-xl text-gray-500" />
+    <div className="relative min-h-screen overflow-hidden bg-[#eef6f3] p-4 sm:p-6">
+      <div className="pointer-events-none absolute -left-20 top-10 h-64 w-64 rounded-full bg-[#0f766e]/15 blur-3xl" />
+      <div className="pointer-events-none absolute right-0 top-20 h-72 w-72 rounded-full bg-[#ca8a04]/10 blur-3xl" />
+      <div className="pointer-events-none absolute bottom-0 left-1/3 h-56 w-56 rounded-full bg-[#14b8a6]/10 blur-3xl" />
+
+      <div className="relative mb-8 flex flex-wrap items-start justify-between gap-4 rounded-[1.75rem] border border-[#d4e5df] bg-gradient-to-r from-[#f6fffc] via-[#eef9f5] to-[#fef6e4] px-5 py-6 shadow-[0_18px_60px_rgba(8,47,43,0.12)] sm:px-7 sm:py-8">
+        <div>
+          <p className="inline-flex rounded-full bg-[#0f766e]/10 px-3 py-1 text-xs font-semibold uppercase tracking-[0.14em] text-[#0f766e]">
+            Customer Control Center
+          </p>
+          <h1 className="mt-3 text-3xl font-black tracking-tight text-[#143f3a] sm:text-4xl">
+            Welcome {user?.name}
+          </h1>
+          <p className="mt-2 max-w-2xl text-sm text-[#4b6764] sm:text-base">
+            Track bookings, find top-rated providers, and manage every service interaction from one clean workspace.
+          </p>
+        </div>
+
+        <div className="inline-flex items-center gap-2 rounded-2xl border border-[#d5e5df] bg-white/85 px-4 py-3 text-[#355956] shadow-sm">
+          <FaBell className="text-base" />
+          <span className="text-sm font-semibold">Updates</span>
+        </div>
       </div>
 
       {notification && (
-        <div className="mb-6 rounded-lg bg-green-100 px-4 py-2 text-green-700">
+        <div className="mb-6 rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-semibold text-emerald-700 shadow-sm">
           {notification}
         </div>
       )}
 
-      <div className="mb-8 grid grid-cols-1 gap-4 md:grid-cols-4">
+      <div className="mb-8 grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
         <div onClick={() => setBookingFilter("all")}>
-          <Stat icon={<FaClipboardList />} label="Bookings" value={bookings.length} />
+          <Stat
+            icon={<FaClipboardList />}
+            label="Bookings"
+            value={bookings.length}
+            tone="teal"
+            delay={0}
+          />
         </div>
-        <Stat icon={<FaUsers />} label="Providers" value={providers.length} />
+        <Stat
+          icon={<FaUsers />}
+          label="Providers"
+          value={providers.length}
+          tone="blue"
+          delay={90}
+        />
         <Stat
           icon={<FaStar />}
           label="Avg Rating"
@@ -360,9 +479,17 @@ export default function CustomerDashboard() {
                 ).toFixed(1)
               : "0"
           }
+          tone="amber"
+          delay={180}
         />
         <div onClick={() => setBookingFilter("upcoming")}>
-          <Stat icon={<FaClock />} label="Upcoming" value={upcomingBookings.length} />
+          <Stat
+            icon={<FaClock />}
+            label="Upcoming"
+            value={upcomingBookings.length}
+            tone="teal"
+            delay={270}
+          />
         </div>
       </div>
 
@@ -370,43 +497,133 @@ export default function CustomerDashboard() {
         {filteredBookings.length === 0 ? (
           <Empty text="No bookings yet." />
         ) : (
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4">
-            {filteredBookings.map((b) => (
-              <div key={b._id} className="rounded-xl bg-white p-4 shadow">
-                <p className="font-semibold">{b.serviceName}</p>
-                <p className="text-sm text-gray-500">
-                  {b.provider?.basicInfo?.providerName || b.provider?.name}
-                </p>
-                <p className="text-sm text-gray-400">
-                  {new Date(b.scheduledAt).toLocaleString()}
-                </p>
-                <div className="mt-2">
-                  <StatusBadge status={b.status} />
-                </div>
-                <div className="mt-3 flex flex-col gap-1">
-                  {b.status === "completed" && !b.reviewed && (
-                    <button
-                      onClick={() => openReviewModal(b)}
-                      className="text-sm text-teal-600 underline"
-                    >
-                      Leave Review
-                    </button>
-                  )}
-                  {b.status !== "cancelled" && (
-                    <button
-                      onClick={() => setChatBookingId(b._id)}
-                      className="text-sm text-teal-600 underline"
-                    >
-                      Chat
-                    </button>
-                  )}
-                  {b.reviewed && (
-                    <span className="text-sm font-medium text-green-600">Reviewed</span>
-                  )}
-                </div>
+          <>
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-4">
+              {(showAllBookings ? filteredBookings : filteredBookings.slice(0, 4)).map((b, idx) => {
+                const cardStyle = pickCardStyle(BOOKING_CARD_STYLES, idx);
+                const isExpanded = expandedBooking === b._id;
+
+                return (
+                  <div
+                    key={b._id}
+                    className={`dashboard-reveal overflow-hidden rounded-2xl border transition ${cardStyle.shell}`}
+                    style={{ animationDelay: `${idx * 65}ms` }}
+                  >
+                    <div className={`h-1.5 w-full bg-gradient-to-r ${cardStyle.accent}`} />
+                    
+                    <div className="p-5">
+                      {/* Collapsed View */}
+                      {!isExpanded ? (
+                        <>
+                          <div className="mb-4 flex items-start justify-between gap-3">
+                            <div className="min-w-0 flex-1">
+                              <p className="truncate text-base font-bold text-[#183f3b]">{b.serviceName}</p>
+                              <p className="truncate text-sm text-[#5f7a77]">
+                                {b.provider?.basicInfo?.providerName || b.provider?.name}
+                              </p>
+                            </div>
+                            <div className="flex-shrink-0">
+                              <StatusBadge status={b.status} />
+                            </div>
+                          </div>
+                          <p className="mb-4 text-xs text-[#7a9391]">
+                            {new Date(b.scheduledAt).toLocaleString()}
+                          </p>
+                          <button
+                            onClick={() => setExpandedBooking(b._id)}
+                            className="w-full rounded-lg border border-[#0f766e] bg-white px-3 py-2 text-xs font-bold text-[#0f766e] transition hover:bg-[#0f766e] hover:text-white"
+                          >
+                            View Details
+                          </button>
+                        </>
+                      ) : (
+                        <>
+                          {/* Expanded View */}
+                          <div className="mb-4 flex items-start justify-between gap-3">
+                            <div>
+                              <p className="text-base font-bold text-[#183f3b]">{b.serviceName}</p>
+                              <p className="mt-1 text-sm text-[#5f7a77]">
+                                {b.provider?.basicInfo?.providerName || b.provider?.name}
+                              </p>
+                            </div>
+                            <StatusBadge status={b.status} />
+                          </div>
+
+                          <div className="mb-4 space-y-3 rounded-lg bg-[#f8fcfb] p-3">
+                            <div>
+                              <p className="text-xs font-bold uppercase tracking-wider text-[#4f6e6b]">Date & Time</p>
+                              <p className="mt-1 text-sm text-[#5f7a77]">{new Date(b.scheduledAt).toLocaleString()}</p>
+                            </div>
+                            {b.location && (
+                              <div>
+                                <p className="text-xs font-bold uppercase tracking-wider text-[#4f6e6b]">Location</p>
+                                <p className="mt-1 text-sm text-[#5f7a77]">{b.location}</p>
+                              </div>
+                            )}
+                            {b.notes && (
+                              <div>
+                                <p className="text-xs font-bold uppercase tracking-wider text-[#4f6e6b]">Notes</p>
+                                <p className="mt-1 text-sm text-[#5f7a77]">{b.notes}</p>
+                              </div>
+                            )}
+                          </div>
+
+                          <div className="mb-4 rounded-lg bg-[#f0f8f6] px-3 py-2">
+                            <p className={`text-lg font-black ${cardStyle.price}`}>
+                              {formatKES(b.servicePrice || 0)}
+                            </p>
+                            <p className="text-xs text-[#5f7a77]">Service cost</p>
+                          </div>
+
+                          <div className="space-y-2 border-t border-[#e0ebe8] pt-3">
+                            {b.status === "completed" && !b.reviewed && (
+                              <button
+                                onClick={() => openReviewModal(b)}
+                                className="w-full rounded-lg border border-[#0f766e] bg-white px-3 py-2 text-xs font-bold text-[#0f766e] transition hover:bg-[#0f766e] hover:text-white"
+                              >
+                                Leave Review
+                              </button>
+                            )}
+                            {b.status !== "cancelled" && (
+                              <button
+                                onClick={() => setChatBookingId(b._id)}
+                                className="w-full rounded-lg border border-[#0f766e] bg-white px-3 py-2 text-xs font-bold text-[#0f766e] transition hover:bg-[#0f766e] hover:text-white"
+                              >
+                                Chat with Provider
+                              </button>
+                            )}
+                            {b.reviewed && (
+                              <span className={`inline-flex w-full justify-center rounded-lg px-2.5 py-2 text-xs font-bold ${cardStyle.badge}`}>
+                                ✓ Reviewed
+                              </span>
+                            )}
+                            <button
+                              onClick={() => setExpandedBooking(null)}
+                              className="w-full rounded-lg bg-[#e8f6f2] px-3 py-2 text-xs font-bold text-[#0f766e] transition hover:bg-[#d4f0eb]"
+                            >
+                              Collapse
+                            </button>
+                          </div>
+                        </>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+
+            {/* View More Button */}
+            {filteredBookings.length > 4 && (
+              <div className="mt-6 flex justify-center">
+                <button
+                  onClick={() => setShowAllBookings(!showAllBookings)}
+                  className="rounded-xl bg-gradient-to-r from-[#0f766e] to-[#0d6b64] px-8 py-3 font-bold text-white shadow-lg transition hover:shadow-xl hover:scale-105"
+                >
+                  {showAllBookings ? "Show Less" : `View More (${filteredBookings.length - 4})`}
+                </button>
               </div>
-            ))}
-          </div>
+            )}
+          </>
         )}
       </Section>
 
@@ -414,12 +631,12 @@ export default function CustomerDashboard() {
         <div className="mb-6 flex flex-wrap gap-4">
           <input
             placeholder="Search provider"
-            className="rounded-lg border px-3 py-2"
+            className="rounded-xl border border-[#d6e5e0] bg-[#f8fcfb] px-4 py-2.5 text-[#1f3f3b] outline-none transition placeholder:text-[#8aa5a1] focus:border-[#0f766e] focus:bg-white focus:ring-4 focus:ring-[#0f766e]/15"
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
           />
           <select
-            className="rounded-lg border px-3 py-2"
+            className="rounded-xl border border-[#d6e5e0] bg-[#f8fcfb] px-4 py-2.5 text-[#1f3f3b] outline-none transition focus:border-[#0f766e] focus:bg-white focus:ring-4 focus:ring-[#0f766e]/15"
             value={serviceFilter}
             onChange={(e) => setServiceFilter(e.target.value)}
           >
@@ -433,40 +650,43 @@ export default function CustomerDashboard() {
         </div>
 
         <div className="max-h-[500px] overflow-y-auto">
-          <div className="grid grid-cols-2 gap-4 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-4">
-            {filteredProviders.map((p) => {
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+            {filteredProviders.map((p, idx) => {
+              const cardStyle = pickCardStyle(PROVIDER_CARD_STYLES, idx);
               const coords = getProviderCoords(p);
 
               return (
                 <div
                   key={p._id}
                   onClick={() => setSelectedProvider(p)}
-                  className="cursor-pointer overflow-hidden rounded-xl bg-white p-4 text-center shadow transition hover:shadow-lg"
+                  className={`dashboard-reveal cursor-pointer overflow-hidden rounded-2xl border p-4 transition hover:-translate-y-1 ${cardStyle.shell}`}
+                  style={{ animationDelay: `${idx * 75}ms` }}
                 >
+                  <div className={`mb-3 h-1 w-full rounded-full bg-gradient-to-r ${cardStyle.accent}`} />
                   <div className="mb-3 flex justify-center">
                     <img
                       src={p.basicInfo?.photoURL || "https://dummyimage.com/300x300/ccc/000"}
                       alt={p.basicInfo?.providerName || "Provider"}
-                      className="h-24 w-24 rounded-full border-4 border-teal-100 object-cover shadow"
+                      className={`h-20 w-20 rounded-2xl border-2 object-cover shadow-sm ${cardStyle.avatarRing}`}
                     />
                   </div>
 
-                  <h3 className="text-lg font-bold text-teal-600">
+                  <h3 className="text-lg font-extrabold text-[#133f3a]">
                     {p.basicInfo?.providerName}
                   </h3>
 
-                  <p className="text-sm text-gray-500">
+                  <p className="text-sm text-[#597572]">
                     {p.services?.map((s) => s.name).join(", ")}
                   </p>
 
                   <div className="flex items-center justify-center gap-2">
                     <StarRating rating={p.rating} />
-                    <span className="text-sm">{(p.rating || 0).toFixed(1)}</span>
+                    <span className="text-sm font-semibold text-[#45615e]">{(p.rating || 0).toFixed(1)}</span>
                   </div>
 
-                  <p className="mt-1 text-sm">{p.experience} years experience</p>
+                  <p className="mt-1 text-sm text-[#607a77]">{p.experience} years experience</p>
 
-                  <p className="mt-1 font-semibold text-teal-600">
+                  <p className={`mt-1 font-bold ${cardStyle.price}`}>
                     From {formatKES(p.services?.[0]?.price || 20)}
                   </p>
 
@@ -475,7 +695,7 @@ export default function CustomerDashboard() {
                       e.stopPropagation();
                       setMapProvider(p);
                     }}
-                    className="mt-3 inline-flex items-center justify-center gap-2 text-sm text-gray-600 hover:text-teal-600"
+                    className="mt-3 inline-flex items-center justify-center gap-2 rounded-lg border border-[#d4e4de] bg-[#f7fcfa] px-3 py-2 text-sm font-semibold text-[#41625f] transition hover:border-[#0f766e]/40 hover:text-[#0f766e]"
                   >
                     <FaMapMarkerAlt />
                     <span>{coords ? "View map" : "No map data"}</span>
@@ -535,24 +755,53 @@ export default function CustomerDashboard() {
   );
 }
 
-const Stat = ({ icon, label, value }) => (
-  <div className="flex cursor-pointer items-center gap-4 rounded-xl bg-teal-600 p-5 text-white shadow transition hover:bg-teal-700">
-    <div className="text-2xl text-white">{icon}</div>
+const Stat = ({ icon, label, value, tone = "teal", delay = 0 }) => {
+  const tones = {
+    teal: {
+      card: "border-[#cfe2db] bg-white text-[#133f3a]",
+      icon: "bg-[#e9f6f2] text-[#0f766e]",
+      value: "text-[#143f3a]",
+    },
+    blue: {
+      card: "border-[#d8e2ff] bg-white text-[#1e2a5a]",
+      icon: "bg-[#eef2ff] text-[#4338ca]",
+      value: "text-[#1e2a5a]",
+    },
+    amber: {
+      card: "border-[#f0dfc7] bg-white text-[#5f3b11]",
+      icon: "bg-[#fff4df] text-[#b45309]",
+      value: "text-[#5f3b11]",
+    },
+  };
+
+  const t = tones[tone] || tones.teal;
+
+  return (
+    <div
+      className={`dashboard-reveal flex cursor-pointer items-center gap-4 rounded-2xl border p-5 shadow-[0_10px_30px_rgba(8,47,43,0.08)] transition hover:-translate-y-1 hover:shadow-[0_14px_36px_rgba(8,47,43,0.15)] ${t.card}`}
+      style={{ animationDelay: `${delay}ms` }}
+    >
+      <div className={`rounded-xl p-3 text-xl ${t.icon}`}>{icon}</div>
     <div>
-      <p className="text-sm text-white/90">{label}</p>
-      <p className="text-2xl font-bold text-white">{value}</p>
+      <p className="text-xs font-semibold uppercase tracking-wide text-[#5c7976]">{label}</p>
+      <p className={`text-2xl font-black ${t.value}`}>{value}</p>
     </div>
-  </div>
-);
+    </div>
+  );
+};
 
 const Section = ({ title, children }) => (
-  <div className="mb-8 rounded-xl bg-white p-6 shadow">
-    <h2 className="mb-4 text-xl font-semibold text-teal-600">{title}</h2>
+  <div className="mb-8 rounded-[1.6rem] border border-[#d4e5df] bg-white/95 p-6 shadow-[0_14px_40px_rgba(8,47,43,0.1)]">
+    <h2 className="mb-4 text-xl font-black text-[#0f766e]">{title}</h2>
     {children}
   </div>
 );
 
-const Empty = ({ text }) => <p className="py-6 text-center text-gray-500">{text}</p>;
+const Empty = ({ text }) => (
+  <p className="rounded-xl border border-[#dbe8e3] bg-[#f8fcfb] py-8 text-center text-[#607a77]">
+    {text}
+  </p>
+);
 
 const StatusBadge = ({ status }) => {
   const styles = {
@@ -564,7 +813,7 @@ const StatusBadge = ({ status }) => {
 
   return (
     <span
-      className={`rounded-full px-3 py-1 text-sm ${
+      className={`inline-flex rounded-full px-3 py-1 text-xs font-semibold ${
         styles[status] || "bg-gray-100 text-gray-700"
       }`}
     >
@@ -601,12 +850,12 @@ const StarRatingSelector = ({ rating, setRating }) => {
 };
 
 const Modal = ({ children, onClose, panelClassName = "max-w-lg" }) => (
-  <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-0 sm:p-4">
+  <div className="fixed inset-0 z-50 flex items-center justify-center bg-[#041311]/50 p-0 backdrop-blur-sm sm:p-4">
     <div
-      className={`relative flex w-full flex-col overflow-hidden rounded-none bg-white shadow-2xl sm:max-h-[85vh] sm:rounded-2xl ${panelClassName}`}
+      className={`relative flex w-full flex-col overflow-hidden rounded-none border border-[#d4e5df] bg-[#fcfffe] shadow-[0_24px_80px_rgba(0,0,0,0.32)] sm:max-h-[85vh] sm:rounded-2xl ${panelClassName}`}
     >
       <button
-        className="absolute right-3 top-3 z-10 rounded-full p-2 text-gray-600 hover:bg-gray-100 hover:text-gray-900"
+        className="absolute right-3 top-3 z-10 rounded-full p-2 text-[#607a77] hover:bg-[#ecf5f2] hover:text-[#173f3b]"
         onClick={onClose}
         aria-label="Close modal"
       >
@@ -618,22 +867,22 @@ const Modal = ({ children, onClose, panelClassName = "max-w-lg" }) => (
 );
 
 const ChatModal = ({ booking, providerName, token, userId, onClose }) => (
-  <div className="fixed inset-0 z-50 bg-black/40 p-0 sm:p-4">
-    <div className="flex h-[100dvh] w-full flex-col overflow-hidden bg-white shadow-2xl sm:mx-auto sm:h-[85vh] sm:w-11/12 sm:max-w-5xl sm:rounded-2xl">
-      <div className="flex shrink-0 items-center justify-between border-b px-4 py-3 sm:px-6 sm:py-4">
+  <div className="fixed inset-0 z-50 bg-[#041311]/50 p-0 backdrop-blur-sm sm:p-4">
+    <div className="flex h-[100dvh] w-full flex-col overflow-hidden border border-[#d4e5df] bg-white shadow-[0_24px_80px_rgba(0,0,0,0.32)] sm:mx-auto sm:h-[85vh] sm:w-11/12 sm:max-w-5xl sm:rounded-2xl">
+      <div className="flex shrink-0 items-center justify-between border-b border-[#dde8e4] px-4 py-3 sm:px-6 sm:py-4">
         <div className="min-w-0">
-          <h2 className="truncate text-base font-bold text-teal-600 sm:text-lg">
+          <h2 className="truncate text-base font-black text-[#0f766e] sm:text-lg">
             Chat with {providerName}
           </h2>
           {booking?.serviceName && (
-            <p className="truncate text-xs text-gray-500 sm:text-sm">
+            <p className="truncate text-xs text-[#688380] sm:text-sm">
               {booking.serviceName}
             </p>
           )}
         </div>
 
         <button
-          className="ml-4 rounded-full p-2 text-gray-600 hover:bg-gray-100 hover:text-gray-900"
+          className="ml-4 rounded-full p-2 text-[#607a77] hover:bg-[#ecf5f2] hover:text-[#173f3b]"
           onClick={onClose}
           aria-label="Close chat"
         >
@@ -643,7 +892,7 @@ const ChatModal = ({ booking, providerName, token, userId, onClose }) => (
 
       <div className="min-h-0 flex-1 overflow-hidden">
         <div className="h-full min-h-0 w-full p-2 sm:p-4">
-          <div className="h-full min-h-0 overflow-hidden rounded-xl border bg-white">
+          <div className="h-full min-h-0 overflow-hidden rounded-xl border border-[#d6e6e0] bg-white">
             <Chat bookingId={booking?._id} token={token} userId={userId} />
           </div>
         </div>
@@ -653,19 +902,20 @@ const ChatModal = ({ booking, providerName, token, userId, onClose }) => (
 );
 
 const MapModal = ({ provider, onClose }) => {
+  const [isFullscreen, setIsFullscreen] = useState(false);
   const coords = getProviderCoords(provider);
 
   if (!coords) {
     return (
       <Modal onClose={onClose} panelClassName="max-w-md">
         <div className="p-6 pt-10 sm:p-6 sm:pt-10">
-          <h2 className="mb-3 text-xl font-bold text-teal-600">
+          <h2 className="mb-3 text-xl font-black text-[#0f766e]">
             {provider.basicInfo?.providerName || "Provider"} Location
           </h2>
-          <p className="text-gray-600">
+          <p className="text-[#456360]">
             No saved map coordinates are available for this provider yet.
           </p>
-          <p className="mt-2 text-sm text-gray-500">
+          <p className="mt-2 text-sm text-[#6a8582]">
             {provider.basicInfo?.location || ""}
           </p>
         </div>
@@ -673,38 +923,63 @@ const MapModal = ({ provider, onClose }) => {
     );
   }
 
-  const bounds = [
-    [coords.lat, coords.lng],
-    [coords.lat, coords.lng],
-  ];
+  const bounds = getSurroundingBounds(coords.lat, coords.lng);
 
   return (
-    <Modal onClose={onClose} panelClassName="max-w-md lg:max-w-md">
+    <Modal
+      onClose={onClose}
+      panelClassName={
+        isFullscreen
+          ? "max-w-none w-[96vw] h-[92vh]"
+          : "max-w-md lg:max-w-md"
+      }
+    >
       <div className="p-6 pt-10 sm:p-6 sm:pt-10">
-        <h2 className="mb-2 text-xl font-bold text-teal-600">
+        <h2 className="mb-2 text-xl font-black text-[#0f766e]">
           {provider.basicInfo?.providerName || "Provider"} Location
         </h2>
 
         {provider.basicInfo?.location && (
-          <p className="mb-3 text-sm text-gray-500">{provider.basicInfo.location}</p>
+          <p className="mb-3 text-sm text-[#67817e]">{provider.basicInfo.location}</p>
         )}
 
-        <div className="h-72 overflow-hidden rounded-xl border shadow-sm">
+        <div
+          className={`relative overflow-hidden rounded-xl border border-[#d5e5df] shadow-sm ${
+            isFullscreen ? "h-[calc(92vh-170px)]" : "h-72"
+          }`}
+        >
+          <button
+            type="button"
+            onClick={() => setIsFullscreen((prev) => !prev)}
+            className="absolute right-3 top-3 z-[1000] inline-flex items-center justify-center rounded-lg border border-[#c7ddd7] bg-white/95 p-2 text-[#0f766e] shadow transition hover:bg-[#eef8f5]"
+            title={isFullscreen ? "Exit full screen" : "View full screen"}
+            aria-label={isFullscreen ? "Exit full screen" : "View full screen"}
+          >
+            {isFullscreen ? <FaCompress /> : <FaExpand />}
+          </button>
+
           <MapContainer
             center={[coords.lat, coords.lng]}
-            zoom={17}
+            zoom={13}
             className="h-full w-full"
             scrollWheelZoom={true}
             zoomControl={true}
           >
             <TileLayer url={MAP_TILE_URL} attribution={MAP_ATTRIBUTION} />
             <RecenterMap bounds={bounds} />
+            <ResizeMapOnExpand trigger={isFullscreen} bounds={bounds} />
             <Marker position={[coords.lat, coords.lng]} />
+            <Circle
+              center={[coords.lat, coords.lng]}
+              radius={SURROUNDING_RADIUS_METERS}
+              pathOptions={{ color: "#0f766e", weight: 2, fillOpacity: 0.06 }}
+            />
+            <ScaleControl position="bottomleft" />
           </MapContainer>
         </div>
 
-        <p className="mt-3 text-sm text-gray-500">
-          This view uses a street map style with stronger labels and nearby roads.
+        <p className="mt-3 text-sm text-[#5f7a77]">
+          The map frames nearby roads and neighborhoods around this provider for better area context.
         </p>
       </div>
     </Modal>
@@ -728,88 +1003,83 @@ const ProviderModal = ({
   const coords = getProviderCoords(selectedProvider);
 
   return (
-    <Modal onClose={() => setSelectedProvider(null)} panelClassName="max-w-sm sm:max-w-md">
-      <div className="mx-auto max-w-sm p-6 pt-10 sm:p-6 sm:pt-10">
-        <div className="text-center">
-          <div className="mx-auto mb-4 flex h-24 w-24 items-center justify-center rounded-full bg-teal-50 ring-4 ring-teal-100">
-            <img
-              src={
-                selectedProvider.basicInfo?.photoURL ||
-                "https://dummyimage.com/300x300/ccc/000"
-              }
-              alt={providerName}
-              className="h-24 w-24 rounded-full object-cover"
-            />
+    <Modal onClose={() => setSelectedProvider(null)} panelClassName="max-w-2xl">
+      <div className="max-h-[85vh] overflow-y-auto p-6 pt-10 sm:p-7 sm:pt-10">
+        <div className="rounded-3xl border border-[#d4e5df] bg-gradient-to-r from-[#f7fffc] via-[#edf8f4] to-[#fef6e4] p-5 shadow-sm sm:p-6">
+          <div className="flex flex-wrap items-start gap-4 sm:flex-nowrap">
+            <div className="mx-auto sm:mx-0">
+              <img
+                src={
+                  selectedProvider.basicInfo?.photoURL ||
+                  "https://dummyimage.com/300x300/ccc/000"
+                }
+                alt={providerName}
+                className="h-24 w-24 rounded-2xl border-2 border-[#c9e3da] object-cover shadow-md"
+              />
+            </div>
+
+            <div className="min-w-0 flex-1 text-center sm:text-left">
+              <h2 className="truncate text-2xl font-black text-[#143f3a]">{providerName}</h2>
+
+              <div className="mt-2 flex items-center justify-center gap-2 sm:justify-start">
+                <StarRating rating={selectedProvider.rating} />
+                <span className="text-sm font-bold text-[#395c58]">
+                  {(selectedProvider.rating || 0).toFixed(1)}
+                </span>
+              </div>
+
+              <div className="mt-3 flex flex-wrap justify-center gap-2 sm:justify-start">
+                <span className="rounded-full bg-white px-3 py-1 text-xs font-semibold text-[#4f6d69] ring-1 ring-[#d4e5df]">
+                  {selectedProvider.experience
+                    ? `${selectedProvider.experience} years experience`
+                    : "Experience not listed"}
+                </span>
+                {location && (
+                  <span className="rounded-full bg-white px-3 py-1 text-xs font-semibold text-[#4f6d69] ring-1 ring-[#d4e5df]">
+                    {location}
+                  </span>
+                )}
+                {coords && (
+                  <span className="rounded-full bg-[#e8f6f2] px-3 py-1 text-xs font-semibold text-[#0f766e]">
+                    <span className="inline-flex items-center gap-1">
+                      <FaMapMarkerAlt />
+                      Map available
+                    </span>
+                  </span>
+                )}
+              </div>
+            </div>
           </div>
-
-          <h2 className="text-2xl font-bold text-slate-900">{providerName}</h2>
-
-          <div className="mt-2 flex items-center justify-center gap-2">
-            <StarRating rating={selectedProvider.rating} />
-            <span className="text-sm font-semibold text-slate-700">
-              {(selectedProvider.rating || 0).toFixed(1)}
-            </span>
-          </div>
-
-          <p className="mt-3 text-sm leading-6 text-slate-600">
-            {selectedProvider.experience
-              ? `${selectedProvider.experience} years experience`
-              : "Experience not listed"}
-          </p>
-
-          {location && <p className="mt-1 text-sm text-slate-500">{location}</p>}
         </div>
 
-        <div className="mt-5 rounded-2xl bg-slate-50 p-4">
-          <p className="mb-3 text-sm font-semibold text-slate-700">Services</p>
-          <div className="flex flex-wrap justify-center gap-2">
+        <div className="mt-5 rounded-2xl border border-[#dbe7e3] bg-[#f8fcfb] p-4 sm:p-5">
+          <div className="mb-3 flex items-center justify-between">
+            <p className="text-sm font-semibold uppercase tracking-wide text-[#4f6e6b]">Services</p>
+            {primaryService && (
+              <span className="rounded-full bg-white px-3 py-1 text-xs font-semibold text-[#0f766e] ring-1 ring-[#d9e7e2]">
+                From {formatKES(primaryService.price || 0)}
+              </span>
+            )}
+          </div>
+
+          <div className="grid gap-2 sm:grid-cols-2">
             {services.length > 0 ? (
               services.map((s) => (
-                <span
+                <div
                   key={s._id}
-                  className="rounded-full bg-white px-3 py-1 text-xs font-medium text-slate-700 shadow-sm ring-1 ring-slate-200"
+                  className="rounded-xl border border-[#d9e7e2] bg-white px-3 py-2 text-sm font-medium text-[#425f5c]"
                 >
                   {s.name}
-                </span>
+                </div>
               ))
             ) : (
               <span className="text-sm text-slate-500">No services listed</span>
             )}
           </div>
-
-          {primaryService && (
-            <div className="mt-4 flex items-center justify-between rounded-xl bg-white px-4 py-3 shadow-sm ring-1 ring-slate-200">
-              <span className="text-sm text-slate-600">Starting price</span>
-              <span className="text-sm font-semibold text-teal-600">
-                {formatKES(primaryService.price || 0)}
-              </span>
-            </div>
-          )}
         </div>
 
-        {coords && (
-          <button
-            onClick={() => setSelectedProvider(null)}
-            className="mt-4 inline-flex w-full items-center justify-center gap-2 rounded-xl bg-slate-100 px-4 py-3 text-sm font-semibold text-slate-700 transition hover:bg-slate-200"
-          >
-            <FaMapMarkerAlt />
-            Map available
-          </button>
-        )}
-
-        <button
-          className="mt-4 w-full rounded-xl bg-teal-600 px-4 py-3 font-semibold text-white transition hover:bg-teal-700"
-          onClick={() => {
-            setBookingProvider(selectedProvider);
-            setSelectedProvider(null);
-            setSelectedService("");
-          }}
-        >
-          Book Now
-        </button>
-
-        <div className="mt-6">
-          <h3 className="mb-3 text-sm font-semibold text-teal-600">Reviews</h3>
+        <div className="mt-5 rounded-2xl border border-[#dbe7e3] bg-white p-4 sm:p-5">
+          <h3 className="mb-3 text-sm font-semibold uppercase tracking-wide text-[#0f766e]">Recent Reviews</h3>
 
           {reviewsLoading ? (
             <p className="text-sm text-gray-500">Loading reviews...</p>
@@ -818,7 +1088,7 @@ const ProviderModal = ({
           ) : (
             <div className="space-y-3">
               {providerReviews.map((r) => (
-                <div key={r._id} className="rounded-xl border border-slate-200 p-3">
+                <div key={r._id} className="rounded-xl border border-[#dbe7e3] bg-[#fbfefd] p-3">
                   <div className="flex items-start justify-between gap-3">
                     <p className="text-sm font-semibold text-slate-900">
                       {r.customer?.name || "Anonymous"}
@@ -830,6 +1100,26 @@ const ProviderModal = ({
               ))}
             </div>
           )}
+        </div>
+
+        <div className="mt-6 flex flex-wrap gap-3">
+          <button
+            className="flex-1 rounded-xl border border-[#d7e6e1] bg-white px-4 py-3 font-semibold text-[#4f6d69] transition hover:bg-[#f8fcfb]"
+            onClick={() => setSelectedProvider(null)}
+          >
+            Close
+          </button>
+
+          <button
+            className="flex-1 rounded-xl bg-gradient-to-r from-[#0f766e] to-[#0a5a54] px-4 py-3 font-semibold text-white transition hover:from-[#0d6b64] hover:to-[#084944]"
+            onClick={() => {
+              setBookingProvider(selectedProvider);
+              setSelectedProvider(null);
+              setSelectedService("");
+            }}
+          >
+            Continue to Booking
+          </button>
         </div>
       </div>
     </Modal>
@@ -844,70 +1134,131 @@ const BookingModal = ({
   setSelectedService,
   submitBooking,
   setBookingProvider,
-}) => (
-  <Modal onClose={() => setBookingProvider(null)} panelClassName="max-w-md">
-    <div className="p-6 pt-10 sm:p-6 sm:pt-10">
-      <h2 className="mb-4 text-xl font-bold text-teal-600">
-        Book {bookingProvider.basicInfo?.providerName}
-      </h2>
+}) => {
+  const selectedServiceObj =
+    bookingProvider.services?.find((s) => s._id === selectedService) || null;
 
-      <div className="space-y-3">
-        <input
-          type="date"
-          className="w-full rounded-lg border px-3 py-2"
-          value={quickBooking.date}
-          onChange={(e) =>
-            setQuickBooking((prev) => ({ ...prev, date: e.target.value }))
-          }
-        />
-        <input
-          type="time"
-          className="w-full rounded-lg border px-3 py-2"
-          value={quickBooking.time}
-          onChange={(e) =>
-            setQuickBooking((prev) => ({ ...prev, time: e.target.value }))
-          }
-        />
-        <input
-          type="text"
-          placeholder="Location"
-          className="w-full rounded-lg border px-3 py-2"
-          value={quickBooking.location}
-          onChange={(e) =>
-            setQuickBooking((prev) => ({ ...prev, location: e.target.value }))
-          }
-        />
-        <textarea
-          placeholder="Notes"
-          className="w-full rounded-lg border px-3 py-2"
-          value={quickBooking.notes}
-          onChange={(e) =>
-            setQuickBooking((prev) => ({ ...prev, notes: e.target.value }))
-          }
-        />
-        <select
-          className="w-full rounded-lg border px-3 py-2"
-          value={selectedService}
-          onChange={(e) => setSelectedService(e.target.value)}
-        >
-          <option value="">Select Service</option>
-          {bookingProvider.services?.map((s) => (
-            <option key={s._id} value={s._id}>
-              {s.name} - {formatKES(s.price)}
-            </option>
-          ))}
-        </select>
+  return (
+    <Modal onClose={() => setBookingProvider(null)} panelClassName="max-w-2xl">
+      <div className="max-h-[85vh] overflow-y-auto p-6 pt-10 sm:p-7 sm:pt-10">
+        <div className="rounded-3xl border border-[#d4e5df] bg-gradient-to-r from-[#f7fffc] via-[#edf8f4] to-[#fef6e4] p-5 shadow-sm sm:p-6">
+          <h2 className="text-xl font-black text-[#0f766e] sm:text-2xl">
+            Book {bookingProvider.basicInfo?.providerName}
+          </h2>
+          <p className="mt-1 text-sm text-[#67817e]">
+            Choose service details, schedule, and location to confirm this booking.
+          </p>
 
-        <button
-          className="w-full rounded-lg bg-teal-600 py-3 font-semibold text-white transition hover:bg-teal-700"
-          onClick={submitBooking}
-        >
-          Confirm Booking
-        </button>
+          <div className="mt-4 flex flex-wrap gap-2">
+            <span className="rounded-full bg-white px-3 py-1 text-xs font-semibold text-[#4f6d69] ring-1 ring-[#d4e5df]">
+              {bookingProvider.services?.length || 0} services available
+            </span>
+            {selectedServiceObj && (
+              <span className="rounded-full bg-[#e8f6f2] px-3 py-1 text-xs font-semibold text-[#0f766e]">
+                Selected: {selectedServiceObj.name} ({formatKES(selectedServiceObj.price)})
+              </span>
+            )}
+          </div>
+        </div>
+
+        <div className="mt-5 rounded-2xl border border-[#dbe7e3] bg-[#f8fcfb] p-4 sm:p-5">
+          <div className="grid gap-4 sm:grid-cols-2">
+            <div>
+              <label className="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-[#4f6e6b]">
+                Date
+              </label>
+              <input
+                type="date"
+                className="w-full rounded-xl border border-[#d4e4df] bg-white px-3 py-2.5 outline-none transition focus:border-[#0f766e] focus:ring-4 focus:ring-[#0f766e]/15"
+                value={quickBooking.date}
+                onChange={(e) =>
+                  setQuickBooking((prev) => ({ ...prev, date: e.target.value }))
+                }
+              />
+            </div>
+
+            <div>
+              <label className="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-[#4f6e6b]">
+                Time
+              </label>
+              <input
+                type="time"
+                className="w-full rounded-xl border border-[#d4e4df] bg-white px-3 py-2.5 outline-none transition focus:border-[#0f766e] focus:ring-4 focus:ring-[#0f766e]/15"
+                value={quickBooking.time}
+                onChange={(e) =>
+                  setQuickBooking((prev) => ({ ...prev, time: e.target.value }))
+                }
+              />
+            </div>
+          </div>
+
+          <div className="mt-4">
+            <label className="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-[#4f6e6b]">
+              Service
+            </label>
+            <select
+              className="w-full rounded-xl border border-[#d4e4df] bg-white px-3 py-2.5 outline-none transition focus:border-[#0f766e] focus:ring-4 focus:ring-[#0f766e]/15"
+              value={selectedService}
+              onChange={(e) => setSelectedService(e.target.value)}
+            >
+              <option value="">Select Service</option>
+              {bookingProvider.services?.map((s) => (
+                <option key={s._id} value={s._id}>
+                  {s.name} - {formatKES(s.price)}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div className="mt-4">
+            <label className="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-[#4f6e6b]">
+              Location
+            </label>
+            <input
+              type="text"
+              placeholder="Estate, street, landmark"
+              className="w-full rounded-xl border border-[#d4e4df] bg-white px-3 py-2.5 outline-none transition placeholder:text-[#8aa5a1] focus:border-[#0f766e] focus:ring-4 focus:ring-[#0f766e]/15"
+              value={quickBooking.location}
+              onChange={(e) =>
+                setQuickBooking((prev) => ({ ...prev, location: e.target.value }))
+              }
+            />
+          </div>
+
+          <div className="mt-4">
+            <label className="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-[#4f6e6b]">
+              Notes
+            </label>
+            <textarea
+              placeholder="Any instructions for the provider"
+              rows={3}
+              className="w-full rounded-xl border border-[#d4e4df] bg-white px-3 py-2.5 outline-none transition placeholder:text-[#8aa5a1] focus:border-[#0f766e] focus:ring-4 focus:ring-[#0f766e]/15"
+              value={quickBooking.notes}
+              onChange={(e) =>
+                setQuickBooking((prev) => ({ ...prev, notes: e.target.value }))
+              }
+            />
+          </div>
+        </div>
+
+        <div className="mt-5 flex flex-wrap gap-3">
+          <button
+            className="flex-1 rounded-xl border border-[#d7e6e1] bg-white px-4 py-3 font-semibold text-[#4f6d69] transition hover:bg-[#f8fcfb]"
+            onClick={() => setBookingProvider(null)}
+          >
+            Cancel
+          </button>
+          <button
+            className="flex-1 rounded-xl bg-gradient-to-r from-[#0f766e] to-[#0a5a54] px-4 py-3 font-semibold text-white transition hover:from-[#0d6b64] hover:to-[#084944]"
+            onClick={submitBooking}
+          >
+            Confirm Booking
+          </button>
+        </div>
       </div>
-    </div>
-  </Modal>
-);
+    </Modal>
+  );
+};
 
 const ReviewModal = ({
   reviewBooking,
@@ -918,7 +1269,7 @@ const ReviewModal = ({
 }) => (
   <Modal onClose={() => setReviewBooking(null)} panelClassName="max-w-md">
     <div className="p-6 pt-10 sm:p-6 sm:pt-10">
-      <h2 className="mb-4 text-xl font-bold text-teal-600">
+      <h2 className="mb-4 text-xl font-black text-[#0f766e]">
         Review {reviewBooking.serviceName}
       </h2>
       <StarRatingSelector
@@ -927,12 +1278,12 @@ const ReviewModal = ({
       />
       <textarea
         placeholder="Comment"
-        className="w-full rounded-lg border px-3 py-2"
+        className="w-full rounded-xl border border-[#d4e4df] bg-[#f7fcfa] px-3 py-2.5 outline-none transition focus:border-[#0f766e] focus:bg-white focus:ring-4 focus:ring-[#0f766e]/15"
         value={reviewData.comment}
         onChange={(e) => setReviewData((prev) => ({ ...prev, comment: e.target.value }))}
       />
       <button
-        className="mt-3 w-full rounded-lg bg-teal-600 py-3 font-semibold text-white transition hover:bg-teal-700"
+        className="mt-3 w-full rounded-xl bg-gradient-to-r from-[#0f766e] to-[#0a5a54] py-3 font-semibold text-white transition hover:from-[#0d6b64] hover:to-[#084944]"
         onClick={submitReview}
       >
         Submit Review
